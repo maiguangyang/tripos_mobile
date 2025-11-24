@@ -55,4 +55,10 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
     if (result == null) throw Exception('Payment failed: No response');
     return PaymentResponse.fromMap(result);
   }
+
+  @override
+  Future<bool> disconnect() async {
+    final bool? result = await methodChannel.invokeMethod<bool>('disconnect');
+    return result ?? false;
+  }
 }

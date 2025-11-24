@@ -211,11 +211,11 @@ class _MyAppState extends State<MyApp> {
     });
 
     try {
-      final request = PaymentRequest(amount: 1.00, currencyCode: 'USD');
-
       // 调用后，SDK 会通过 EventStream 发送 "Please Insert Card"
       // 这里 await 的结果是最终交易结束的结果
-      final response = await _triposPlugin.processPayment(request);
+      final response = await _triposPlugin.processPayment(
+        PaymentRequest(amount: 10.50),
+      );
 
       _log('Transaction Finished.');
       _log('Approved: ${response.isApproved}');
@@ -323,7 +323,7 @@ class _MyAppState extends State<MyApp> {
         ),
         ElevatedButton.icon(
           icon: const Icon(Icons.payment),
-          label: const Text('3. Pay \$1.00'),
+          label: const Text('3. Pay \$10.50'),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.deepOrange,
             foregroundColor: Colors.white,

@@ -24,7 +24,12 @@ class MockTriposMobilePlatform
 
   @override
   Future<PaymentResponse> processPayment(PaymentRequest request) async {
-    return PaymentResponse(transactionId: 'mock_id', isApproved: true);
+    return PaymentResponse(transactionId: 'test', isApproved: true);
+  }
+
+  @override
+  Future<bool> disconnect() async {
+    return true;
   }
 }
 

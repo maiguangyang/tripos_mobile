@@ -32,6 +32,10 @@ abstract class TriposMobilePlatform extends PlatformInterface {
     throw UnimplementedError('processPayment() has not been implemented.');
   }
 
+  Future<bool> disconnect() {
+    throw UnimplementedError('disconnect() has not been implemented.');
+  }
+
   Future<String?> getPlatformVersion() {
     throw UnimplementedError('platformVersion() has not been implemented.');
   }
@@ -45,6 +49,7 @@ class TriposConfiguration {
   final String applicationId; // e.g. "12345"
   final String applicationName; // e.g. "MyPosApp"
   final String applicationVersion; // e.g. "1.0.0"
+  final bool isProduction; // Production vs Test mode
 
   TriposConfiguration({
     required this.acceptorId,
@@ -53,6 +58,7 @@ class TriposConfiguration {
     this.applicationId = "12345",
     this.applicationName = "FlutterApp",
     this.applicationVersion = "1.0.0",
+    this.isProduction = false, // Default to test mode for safety
   });
 
   Map<String, dynamic> toMap() {
@@ -63,6 +69,7 @@ class TriposConfiguration {
       'applicationId': applicationId,
       'applicationName': applicationName,
       'applicationVersion': applicationVersion,
+      'isProduction': isProduction,
     };
   }
 }
@@ -92,12 +99,10 @@ class TriposDevice {
 
 class PaymentRequest {
   final double amount;
-  final String currencyCode;
-  PaymentRequest({required this.amount, required this.currencyCode});
-  Map<String, dynamic> toMap() => {
-    'amount': amount,
-    'currencyCode': currencyCode,
-  };
+
+  PaymentRequest({required this.amount});
+
+  Map<String, dynamic> toMap() => {'amount': amount};
 }
 
 class PaymentResponse {
@@ -105,12 +110,16 @@ class PaymentResponse {
   final bool isApproved;
   final String? message;
   final String? authCode;
+  final String? amount; // Authorized amount
+  final String? rawResponse; // Raw SDK response for debugging
 
   PaymentResponse({
     required this.transactionId,
     required this.isApproved,
     this.message,
     this.authCode,
+    this.amount,
+    this.rawResponse,
   });
 
   factory PaymentResponse.fromMap(Map<dynamic, dynamic> map) {
@@ -119,6 +128,8 @@ class PaymentResponse {
       isApproved: map['isApproved'] as bool? ?? false,
       message: map['message'] as String?,
       authCode: map['authCode'] as String?,
+      amount: map['amount'] as String?,
+      rawResponse: map['rawResponse'] as String?,
     );
   }
 }

@@ -20,4 +20,8 @@ class TriposMobile {
   Future<PaymentResponse> processPayment(PaymentRequest request) {
     return TriposMobilePlatform.instance.processPayment(request);
   }
+
+  Future<bool> disconnect() {
+    return TriposMobilePlatform.instance.disconnect();
+  }
 }
