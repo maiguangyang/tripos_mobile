@@ -1,0 +1,96 @@
+group = "com.example.tripos_mobile"
+version = "1.0-SNAPSHOT"
+
+buildscript {
+    ext.kotlin_version = "1.9.20"
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.2.0")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
+    }
+}
+
+// 【核心修复】这里做了改动：强制使用 project.file 指向插件自己的 libs 目录
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+
+
+android {
+    namespace = "com.example.tripos_mobile"
+    compileSdk = 34
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+    }
+
+    defaultConfig {
+        minSdk = 29 // 必须 29+，因为 ux-server-release...aar
+    }
+
+    dependencies {
+        // Explicitly list AARs as files to ensure they are found by the consumer app
+        compileOnly fileTree(dir: "libs", include: ["*.aar"])
+        implementation "com.fasterxml.jackson.core:jackson-core:2.11.0"
+        implementation "com.fasterxml.jackson.core:jackson-annotations:2.11.0"
+        implementation "com.fasterxml.jackson.core:jackson-databind:2.11.0"
+        implementation "io.realm:realm-android-library:10.15.1"
+
+        // Dependencies from sample app
+        implementation 'com.google.dagger:dagger:2.45'
+        implementation 'org.apache.commons:commons-lang3:3.12.0'
+        implementation 'commons-io:commons-io:2.17.0'
+        implementation group: 'commons-validator', name: 'commons-validator', version: '1.7'
+        implementation 'com.google.code.gson:gson:2.13.1'
+        implementation 'org.apache.logging.log4j:log4j-api:2.17.1'
+        implementation 'org.apache.logging.log4j:log4j-core:2.17.1'
+        implementation ('org.simpleframework:simple-xml:2.7.1') {
+            exclude module: 'stax-api'
+            exclude module: 'stax'
+            exclude module: 'xpp3'
+        }
+        implementation 'com.squareup.okhttp3:logging-interceptor:4.10.0'
+        implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+        implementation 'com.squareup.retrofit2:retrofit:2.9.0'
+        implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+        implementation 'androidx.work:work-runtime-ktx:2.10.0'
+        implementation "org.apache.commons:commons-compress:1.21"
+        implementation 'com.squareup.okhttp3:okhttp-tls:4.10.0'
+        implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+        implementation 'com.google.zxing:core:3.5.3'
+    }
+    
+    packagingOptions {
+        pickFirst 'lib/x86/libc++_shared.so'
+        pickFirst 'lib/x86_64/libc++_shared.so'
+        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
+        pickFirst 'lib/arm64-v8a/libc++_shared.so'
+        
+        // Exclude META-INF files that cause conflicts
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/*.kotlin_module'
+    }
+}
