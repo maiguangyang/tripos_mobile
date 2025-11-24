@@ -5,6 +5,12 @@ class TriposMobile {
     return TriposMobilePlatform.instance.getPlatformVersion();
   }
 
+  /// Stream of events from the triPOS SDK
+  /// Listen to this for real-time updates like "Insert Card", "Connected", etc.
+  Stream<TriposEvent> get events {
+    return TriposMobilePlatform.instance.events;
+  }
+
   Future<void> initialize(TriposConfiguration config) {
     return TriposMobilePlatform.instance.initialize(config);
   }

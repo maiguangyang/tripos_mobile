@@ -47,4 +47,61 @@ void main() {
 
     expect(await triposMobilePlugin.getPlatformVersion(), '42');
   });
+
+  test('initialize with production mode', () async {
+    MockTriposMobilePlatform fakePlatform = MockTriposMobilePlatform();
+    TriposMobilePlatform.instance = fakePlatform;
+
+    final config = TriposConfiguration(
+      acceptorId: 'test_acceptor',
+      accountId: 'test_account',
+      accountToken: 'test_token',
+      isProduction: true,
+    );
+
+    await expectLater(fakePlatform.initialize(config), completes);
+  });
+
+  test('scanDevices returns empty list', () async {
+    MockTriposMobilePlatform fakePlatform = MockTriposMobilePlatform();
+    TriposMobilePlatform.instance = fakePlatform;
+
+    final devices = await fakePlatform.scanDevices();
+    expect(devices, isEmpty);
+  });
+
+  test('connectDevice returns true', () async {
+    MockTriposMobilePlatform fakePlatform = MockTriposMobilePlatform();
+    TriposMobilePlatform.instance = fakePlatform;
+
+    final device = TriposDevice(name: 'Test Device', identifier: '00:00:00:00');
+    final result = await fakePlatform.connectDevice(device);
+    expect(result, isTrue);
+  });
+
+  test('processPayment returns successful response', () async {
+    MockTriposMobilePlatform fakePlatform = MockTriposMobilePlatform();
+    TriposMobilePlatform.instance = fakePlatform;
+
+    final request = PaymentRequest(amount: 10.50);
+    final response = await fakePlatform.processPayment(request);
+
+    expect(response.isApproved, isTrue);
+    expect(response.transactionId, equals('test'));
+  });
+
+  test('disconnect returns true', () async {
+    MockTriposMobilePlatform fakePlatform = MockTriposMobilePlatform();
+    TriposMobilePlatform.instance = fakePlatform;
+
+    final result = await fakePlatform.disconnect();
+    expect(result, isTrue);
+  });
+
+  test('events stream is empty', () async {
+    MockTriposMobilePlatform fakePlatform = MockTriposMobilePlatform();
+    TriposMobilePlatform.instance = fakePlatform;
+
+    expect(fakePlatform.events, emits(isEmpty));
+  });
 }

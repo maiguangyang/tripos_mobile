@@ -29,36 +29,59 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
 
   @override
   Future<void> initialize(TriposConfiguration config) async {
-    await methodChannel.invokeMethod('initialize', config.toMap());
+    try {
+      await methodChannel.invokeMethod('initialize', config.toMap());
+    } on PlatformException catch (e) {
+      throw Exception('SDK初始化失败: ${e.message ?? e.code}');
+    }
   }
 
   @override
   Future<List<TriposDevice>> scanDevices() async {
-    final List<dynamic>? devices = await methodChannel
-        .invokeMethod<List<dynamic>>('scanDevices');
-    return devices?.map((e) => TriposDevice.fromMap(e as Map)).toList() ?? [];
+    try {
+      final List<dynamic>? devices = await methodChannel
+          .invokeMethod<List<dynamic>>('scanDevices');
+      return devices?.map((e) => TriposDevice.fromMap(e as Map)).toList() ?? [];
+    } on PlatformException catch (e) {
+      throw Exception('设备扫描失败: ${e.message ?? e.code}');
+    }
   }
 
   @override
   Future<bool> connectDevice(TriposDevice device) async {
-    final bool? result = await methodChannel.invokeMethod<bool>(
-      'connectDevice',
-      device.toMap(),
-    );
-    return result ?? false;
+    try {
+      final bool? result = await methodChannel.invokeMethod<bool>(
+        'connectDevice',
+        device.toMap(),
+      );
+      return result ?? false;
+    } on PlatformException catch (e) {
+      throw Exception('设备连接失败: ${e.message ?? e.code}');
+    }
   }
 
   @override
   Future<PaymentResponse> processPayment(PaymentRequest request) async {
-    final Map<dynamic, dynamic>? result = await methodChannel
-        .invokeMethod<Map<dynamic, dynamic>>('processPayment', request.toMap());
-    if (result == null) throw Exception('Payment failed: No response');
-    return PaymentResponse.fromMap(result);
+    try {
+      final Map<dynamic, dynamic>? result = await methodChannel
+          .invokeMethod<Map<dynamic, dynamic>>(
+            'processPayment',
+            request.toMap(),
+          );
+      if (result == null) throw Exception('支付失败: 无响应数据');
+      return PaymentResponse.fromMap(result);
+    } on PlatformException catch (e) {
+      throw Exception('支付处理失败: ${e.message ?? e.code}');
+    }
   }
 
   @override
   Future<bool> disconnect() async {
-    final bool? result = await methodChannel.invokeMethod<bool>('disconnect');
-    return result ?? false;
+    try {
+      final bool? result = await methodChannel.invokeMethod<bool>('disconnect');
+      return result ?? false;
+    } on PlatformException catch (e) {
+      throw Exception('断开连接失败: ${e.message ?? e.code}');
+    }
   }
 }

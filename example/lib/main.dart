@@ -5,6 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:tripos_mobile/tripos_mobile_platform_interface.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+// Constants for the app
+class AppConstants {
+  static const double defaultPaymentAmount = 10.50;
+  static const String defaultApplicationId = '1001';
+  static const String defaultApplicationName = 'FlutterExample';
+  static const String defaultApplicationVersion = '1.0.0';
+}
+
 void main() {
   runApp(const MyApp());
 }
@@ -127,9 +135,9 @@ class _MyAppState extends State<MyApp> {
         acceptorId: 'YOUR_ACCEPTOR_ID', // 从 Worldpay 门户获取
         accountId: 'YOUR_ACCOUNT_ID', // 从 Worldpay 门户获取
         accountToken: 'YOUR_ACCOUNT_TOKEN', // 从 Worldpay 门户获取
-        applicationId: '1001',
-        applicationName: 'FlutterExample',
-        applicationVersion: '1.0.0',
+        applicationId: AppConstants.defaultApplicationId,
+        applicationName: AppConstants.defaultApplicationName,
+        applicationVersion: AppConstants.defaultApplicationVersion,
       );
 
       await _triposPlugin.initialize(config);
@@ -201,7 +209,8 @@ class _MyAppState extends State<MyApp> {
   // 5. 发起交易
   Future<void> _processPayment() async {
     if (_connectedDevice == null) {
-      _log('No device connected');
+      _log('Error: No device connected');
+      _showSnackBar('请先连接设备');
       return;
     }
 
@@ -214,25 +223,64 @@ class _MyAppState extends State<MyApp> {
       // 调用后，SDK 会通过 EventStream 发送 "Please Insert Card"
       // 这里 await 的结果是最终交易结束的结果
       final response = await _triposPlugin.processPayment(
-        PaymentRequest(amount: 10.50),
+        PaymentRequest(amount: AppConstants.defaultPaymentAmount),
       );
 
       _log('Transaction Finished.');
       _log('Approved: ${response.isApproved}');
-      _log('Auth Code: ${response.authCode}');
+      _log('Auth Code: ${response.authCode ?? "N/A"}');
       _log('Trans ID: ${response.transactionId}');
+      _log('Amount: ${response.amount ?? "N/A"}');
 
       setState(() {
         _statusMessage = response.isApproved
             ? 'PAYMENT APPROVED!'
             : 'PAYMENT DECLINED';
       });
+
+      if (response.isApproved) {
+        _showSnackBar('✅ 支付成功！金额：\$${response.amount}', isError: false);
+      } else {
+        _showSnackBar('❌ 支付失败：${response.message}', isError: true);
+      }
     } catch (e) {
       _log('Payment Error: $e');
       setState(() => _statusMessage = 'Payment Error Occurred');
+      _showSnackBar('支付错误：$e', isError: true);
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  // 6. 断开连接
+  Future<void> _disconnect() async {
+    setState(() => _isLoading = true);
+    try {
+      await _triposPlugin.disconnect();
+      setState(() {
+        _connectedDevice = null;
+        _statusMessage = 'Disconnected';
+      });
+      _log('Device disconnected successfully');
+      _showSnackBar('设备已断开', isError: false);
+    } catch (e) {
+      _log('Disconnect Error: $e');
+      _showSnackBar('断开连接失败: $e', isError: true);
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Helper: Show SnackBar
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   @override
@@ -323,7 +371,7 @@ class _MyAppState extends State<MyApp> {
         ),
         ElevatedButton.icon(
           icon: const Icon(Icons.payment),
-          label: const Text('3. Pay \$10.50'),
+          label: Text('3. Pay \$${AppConstants.defaultPaymentAmount}'),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.deepOrange,
             foregroundColor: Colors.white,
@@ -331,6 +379,14 @@ class _MyAppState extends State<MyApp> {
           onPressed: _isLoading || _connectedDevice == null
               ? null
               : _processPayment,
+        ),
+        ElevatedButton.icon(
+          icon: const Icon(Icons.bluetooth_disabled),
+          label: const Text('Disconnect'),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
+          onPressed: _isLoading || _connectedDevice == null
+              ? null
+              : _disconnect,
         ),
       ],
     );
