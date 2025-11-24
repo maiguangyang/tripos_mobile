@@ -50,9 +50,18 @@ android {
                 "META-INF/*.kotlin_module"
             )
         }
+        jniLibs {
+            pickFirsts += "lib/*/libtlvtree.so"
+            pickFirsts += "lib/*/libpcltools.so"
+        }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation(fileTree(mapOf("dir" to "../../../android/libs", "include" to listOf("*.aar"))))
 }
