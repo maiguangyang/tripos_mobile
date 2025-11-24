@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:io'; // For Platform check
 
 import 'package:flutter/services.dart';
 import 'package:tripos_mobile/tripos_mobile.dart';
@@ -28,6 +29,9 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   // ✨ Use the public TriposMobile API (recommended)
   final _triposPlugin = TriposMobile();
+
+  // GlobalKey for ScaffoldMessenger
+  final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
   String _platformVersion = 'Unknown';
   bool _isInitialized = false;
@@ -116,6 +120,15 @@ class _MyAppState extends State<MyApp> {
 
   // Request Bluetooth permissions for Android 12+
   Future<bool> _requestBluetoothPermissions() async {
+    // Check if running on iOS simulator
+    if (Platform.isIOS) {
+      // iOS simulator doesn't support Bluetooth
+      // On real device, permissions will be requested automatically
+      _log('ℹ️  Running on iOS - permissions handled by system');
+      _log('⚠️  Note: iOS Simulator does not support Bluetooth');
+      return true; // Skip permission check on iOS
+    }
+
     Map<Permission, PermissionStatus> statuses = await [
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
@@ -125,15 +138,40 @@ class _MyAppState extends State<MyApp> {
     bool allGranted = statuses.values.every((status) => status.isGranted);
 
     if (!allGranted) {
-      _log('Bluetooth permissions denied');
+      _log('❌ Bluetooth permissions denied');
+      _log('请在系统设置中授予蓝牙和位置权限');
+
+      // Show dialog to guide user
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('需要蓝牙权限才能扫描设备。请在设置中授予权限。'),
-            duration: Duration(seconds: 3),
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('需要权限'),
+            content: const Text(
+              '此应用需要以下权限才能扫描设备：\n'
+              '• 蓝牙扫描\n'
+              '• 蓝牙连接\n'
+              '• 位置信息\n\n'
+              '请在系统设置中手动授予这些权限。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  openAppSettings(); // Open app settings
+                },
+                child: const Text('打开设置'),
+              ),
+            ],
           ),
         );
       }
+    } else {
+      _log('✅ Bluetooth permissions granted');
     }
 
     return allGranted;
@@ -169,9 +207,10 @@ class _MyAppState extends State<MyApp> {
   // 3. 扫描设备
   Future<void> _scanDevices() async {
     // Request permissions first
-    final hasPermission = await _requestBluetoothPermissions();
-    if (!hasPermission) {
-      _log('Bluetooth permissions not granted');
+    bool permissionsGranted = await _requestBluetoothPermissions();
+    if (!permissionsGranted && Platform.isAndroid) {
+      // Only block on Android if permissions denied
+      // iOS handles permissions automatically
       return;
     }
 
@@ -287,7 +326,7 @@ class _MyAppState extends State<MyApp> {
   // Helper: Show SnackBar
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    _scaffoldMessengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? Colors.red : Colors.green,
@@ -299,6 +338,7 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      scaffoldMessengerKey: _scaffoldMessengerKey, // Add ScaffoldMessengerKey
       theme: ThemeData(primarySwatch: Colors.blue),
       home: Scaffold(
         appBar: AppBar(title: const Text('triPOS Mobile v4.4 Demo')),
