@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:tripos_mobile/tripos_mobile.dart';
 import 'package:tripos_mobile/tripos_mobile_platform_interface.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -25,10 +26,8 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  // 插件实例
-  // 假设你在 lib/tripos_mobile.dart 中暴露了 platform interface
-  // 或者你可以直接使用 TriposMobilePlatform.instance
-  final _triposPlugin = TriposMobilePlatform.instance;
+  // ✨ Use the public TriposMobile API (recommended)
+  final _triposPlugin = TriposMobile();
 
   String _platformVersion = 'Unknown';
   bool _isInitialized = false;
@@ -59,19 +58,33 @@ class _MyAppState extends State<MyApp> {
   }
 
   // 1. 设置事件监听 (核心：接收 SDK 的 UI 交互请求)
+  // ✨ 演示：监听 triPOS SDK 发送的实时事件
   void _setupEventListeners() {
+    // 使用新的 TriposMobile.events API
     _eventSubscription = _triposPlugin.events.listen(
       (event) {
         _log('[SDK EVENT] Type: ${event.type} | Msg: ${event.message}');
 
         setState(() {
-          if (event.type == 'message' || event.type == 'displayMessage') {
-            // SDK 要求显示提示 (如 "请插卡", "输入密码")
-            _statusMessage = event.message ?? '';
-          } else if (event.type == 'connected') {
-            _statusMessage = 'Device Connected!';
-          } else if (event.type == 'error') {
-            _statusMessage = 'Error: ${event.message}';
+          // 根据事件类型更新UI
+          switch (event.type) {
+            case 'message':
+            case 'displayMessage':
+              // SDK 要求显示提示 (如 "请插卡", "输入密码")
+              _statusMessage = event.message ?? '';
+              break;
+            case 'connected':
+              _statusMessage = 'Device Connected!';
+              break;
+            case 'disconnected':
+              _statusMessage = 'Device Disconnected';
+              _connectedDevice = null;
+              break;
+            case 'error':
+              _statusMessage = 'Error: ${event.message}';
+              break;
+            default:
+              _statusMessage = event.message ?? 'Unknown event';
           }
         });
       },
