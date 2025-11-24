@@ -2,11 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import 'package:flutter/services.dart';
-import 'package:tripos_mobile/tripos_mobile.dart';
 import 'package:tripos_mobile/tripos_mobile_platform_interface.dart';
-
-// 注意：在 Android 上扫描蓝牙需要在此处请求权限
-// (建议引入 permission_handler 插件: BLUETOOTH_SCAN, BLUETOOTH_CONNECT, ACCESS_FINE_LOCATION)
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const MyApp());
@@ -96,6 +93,31 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  // Request Bluetooth permissions for Android 12+
+  Future<bool> _requestBluetoothPermissions() async {
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.location,
+    ].request();
+
+    bool allGranted = statuses.values.every((status) => status.isGranted);
+
+    if (!allGranted) {
+      _log('Bluetooth permissions denied');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('需要蓝牙权限才能扫描设备。请在设置中授予权限。'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+
+    return allGranted;
+  }
+
   // 2. 初始化 SDK (使用 PDF 文档对应的配置参数)
   Future<void> _initializeSdk() async {
     setState(() => _isLoading = true);
@@ -125,6 +147,13 @@ class _MyAppState extends State<MyApp> {
 
   // 3. 扫描设备
   Future<void> _scanDevices() async {
+    // Request permissions first
+    final hasPermission = await _requestBluetoothPermissions();
+    if (!hasPermission) {
+      _log('Bluetooth permissions not granted');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _devices = [];
@@ -132,7 +161,6 @@ class _MyAppState extends State<MyApp> {
     });
 
     try {
-      // 注意：在真机上，此处需要先检查并请求 Android 蓝牙权限
       final devices = await _triposPlugin.scanDevices();
       setState(() => _devices = devices);
       _log('Found ${devices.length} devices');
