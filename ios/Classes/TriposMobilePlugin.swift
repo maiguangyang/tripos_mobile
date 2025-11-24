@@ -1,31 +1,27 @@
 import Flutter
 import UIKit
 import CoreBluetooth
+import triPOSMobileSDK
 
-// TODO: Import triPOS SDK when available
-// import triPOSMobileSDK
-
-public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
+public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, VTPDelegate, VTPDeviceInteractionDelegate {
     
     // MARK: - Constants
     private static let TAG = "TriPOSMobile"
     
     // MARK: - State Management
     private var eventSink: FlutterEventSink?
+    private var resultCallback: FlutterResult? // Used for processPayment callback
     
-    // triPOS SDK instance (to be used when real SDK is integrated)
-    // private var sharedVTP: VTP?
+    // SDK Instance
+    private var vtp: VTP?
     
     // Configuration storage
-    private var savedHostConfig: [String: Any]?
-    private var savedAppConfig: [String: Any]?
+    private var savedHostConfig: VTPHostConfiguration?
+    private var savedAppConfig: VTPApplicationConfiguration?
     private var isProductionMode: Bool = false
-    private var connectedDevice: [String: String]?
     
-    // Bluetooth manager for device scanning
-    private var bluetoothManager: CBCentralManager?
-    private var discoveredDevices: [[String: String]] = []
-    private var scanCompletion: FlutterResult?
+    // Device Scanning
+    private var scanResult: FlutterResult?
     
     // MARK: - Plugin Registration
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -36,6 +32,15 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         
         registrar.addMethodCallDelegate(instance, channel: channel)
         eventChannel.setStreamHandler(instance)
+        
+        // Initialize VTP instance
+        instance.vtp = triPOSMobileSDK.sharedVtp() as? VTP
+        
+        // Set SDK delegate
+        if let vtp = instance.vtp {
+            vtp.add(instance) // Add as delegate
+            vtp.setDeviceInteractionDelegate(instance) // Set interaction delegate
+        }
     }
     
     // MARK: - Method Call Handler
@@ -65,202 +70,332 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         }
     }
     
-    // MARK: - Initialize SDK
+    // MARK: - 1. Initialize SDK
     private func initializeSdk(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        guard let config = call.arguments as? [String: Any] else {
-            print("[\(Self.TAG)] Error: Configuration is null")
-            result(FlutterError(code: "ARGS_ERROR", message: "Configuration is null", details: nil))
+        guard let configMap = call.arguments as? [String: Any] else {
+            result(FlutterError(code: "ARGS_ERROR", message: "Config null", details: nil))
             return
         }
         
-        print("[\(Self.TAG)] Initializing triPOS SDK...")
-        
         // Validate required parameters
-        guard let acceptorId = config["acceptorId"] as? String,
-              let accountId = config["accountId"] as? String,
-              let accountToken = config["accountToken"] as? String,
-              !acceptorId.isEmpty,
-              !accountId.isEmpty,
-              !accountToken.isEmpty else {
-            print("[\(Self.TAG)] Error: Missing required credentials")
+        guard let acceptorId = configMap["acceptorId"] as? String, !acceptorId.isEmpty,
+              let accountId = configMap["accountId"] as? String, !accountId.isEmpty,
+              let accountToken = configMap["accountToken"] as? String, !accountToken.isEmpty else {
             result(FlutterError(code: "INVALID_CONFIG", 
                                message: "Missing required credentials (acceptorId, accountId, or accountToken)", 
                                details: nil))
             return
         }
         
-        // Get production mode
-        isProductionMode = config["isProduction"] as? Bool ?? false
+        print("[\(Self.TAG)] Initializing triPOS SDK...")
+        
+        // 1.1 Configure Host Configuration
+        let hostConfig = VTPHostConfiguration()
+        hostConfig.acceptorId = acceptorId
+        hostConfig.accountId = accountId
+        hostConfig.accountToken = accountToken
+        hostConfig.applicationId = configMap["applicationId"] as? String ?? "12345"
+        hostConfig.applicationName = configMap["applicationName"] as? String ?? "FlutterPlugin"
+        hostConfig.applicationVersion = configMap["applicationVersion"] as? String ?? "1.0.0"
+        
+        // 1.2 Configure Application Configuration
+        let appConfig = VTPApplicationConfiguration()
+        isProductionMode = configMap["isProduction"] as? Bool ?? false
+        appConfig.mode = isProductionMode ? VTPApplicationModeProduction : VTPApplicationModeTestCertification
         print("[\(Self.TAG)] Production mode: \(isProductionMode)")
         
-        // Save host configuration
-        savedHostConfig = [
-            "acceptorId": acceptorId,
-            "accountId": accountId,
-            "accountToken": accountToken,
-            "applicationId": config["applicationId"] as? String ?? "12345",
-            "applicationName": config["applicationName"] as? String ?? "FlutterPlugin",
-            "applicationVersion": config["applicationVersion"] as? String ?? "1.0.0"
-        ]
+        // Save config for later use
+        self.savedHostConfig = hostConfig
+        self.savedAppConfig = appConfig
         
-        // Save application configuration
-        savedAppConfig = [
-            "isProduction": isProductionMode
-        ]
+        // 1.3 Initialize VTPConfiguration
+        let vtpConfig = VTPConfiguration()
+        vtpConfig.hostConfiguration = hostConfig
+        vtpConfig.applicationConfiguration = appConfig
         
-        print("[\(Self.TAG)] Host configuration created")
-        print("[\(Self.TAG)] Application configuration created")
-        
-        // TODO: Initialize actual triPOS SDK when available
-        // sharedVTP = VTP.shared()
-        // Configure with savedHostConfig and savedAppConfig
-        
-        print("[\(Self.TAG)] SDK initialized successfully")
-        result(nil)
-    }
-    
-    // MARK: - Scan Devices
-    private func scanDevices(result: @escaping FlutterResult) {
-        print("[\(Self.TAG)] Scanning for devices...")
-        
-        // TODO: When real SDK is available, use SDK's device scanning
-        // For now, simulate iOS Bluetooth scanning
-        
-        // Note: Bluetooth permissions are handled in Info.plist
-        // NSBluetoothAlwaysUsageDescription or NSBluetoothPeripheralUsageDescription
-        
-        // Simulate finding devices (replace with real Bluetooth scan)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            let mockDevices: [[String: String]] = [
-                ["name": "Moby 5500", "identifier": "00:11:22:33:44:55"],
-                ["name": "Ingenico RBA", "identifier": "AA:BB:CC:DD:EE:FF"]
-            ]
-            print("[\(Self.TAG)] Found \(mockDevices.count) devices")
-            result(mockDevices)
+        // 1.4 Call SDK Initialize
+        do {
+            try vtp?.initialize(with: vtpConfig)
+            print("[\(Self.TAG)] SDK Initialized successfully")
+            result(nil) // Success returns nil in Dart
+        } catch {
+            print("[\(Self.TAG)] Init Error: \(error)")
+            result(FlutterError(code: "INIT_ERROR", message: error.localizedDescription, details: nil))
         }
     }
     
-    // MARK: - Connect Device
+    // MARK: - 2. Scan Devices (SDK Method)
+    private func scanDevices(result: @escaping FlutterResult) {
+        self.scanResult = result
+        
+        print("[\(Self.TAG)] Starting SDK Bluetooth scan...")
+        
+        // Create a temporary configuration for scanning
+        let vtpConfig = VTPConfiguration()
+        // Use ObjC enum name
+        vtpConfig.deviceConfiguration.deviceType = VTPDeviceTypeIngenicoMobyBluetooth
+        
+        do {
+            try vtp?.scanForDevices(with: vtpConfig)
+            // Results will be returned in onReturnBluetoothScanResults
+        } catch {
+            print("[\(Self.TAG)] Scan Error: \(error)")
+            result(FlutterError(code: "SCAN_ERROR", message: error.localizedDescription, details: nil))
+            self.scanResult = nil
+        }
+    }
+    
+    // MARK: - 3. Connect Device
     private func connectDevice(call: FlutterMethodCall, result: @escaping FlutterResult) {
         guard let deviceMap = call.arguments as? [String: Any],
               let identifier = deviceMap["identifier"] as? String else {
-            print("[\(Self.TAG)] Error: Device identifier missing")
-            result(FlutterError(code: "ARGS_ERROR", message: "Device identifier missing", details: nil))
+            result(FlutterError(code: "ARGS", message: "Identifier required", details: nil))
             return
         }
         
+        let isIp = deviceMap["isIp"] as? Bool ?? false
         let name = deviceMap["name"] as? String ?? "Unknown"
         print("[\(Self.TAG)] Connecting to device: \(name) (\(identifier))")
         
-        // Simulate connection on background thread
-        DispatchQueue.global(qos: .userInitiated).async {
-            // TODO: Replace with actual SDK connection
-            // Configure triPOS SDK with device settings
-            // Handle Bluetooth vs TCP/IP connection
-            
-            // Simulate connection delay
-            Thread.sleep(forTimeInterval: 1.5)
-            
-            // Simulate successful connection
-            DispatchQueue.main.async {
-                self.connectedDevice = ["name": name, "identifier": identifier]
-                print("[\(Self.TAG)] Device connected: \(name)")
-                self.sendEvent(type: "connected", message: "Connected to \(name)")
-                result(true)
-            }
+        let connectionInfo = VTPDeviceConnectionInfo()
+        
+        if isIp {
+            connectionInfo.deviceType = VTPDeviceTypeIngenicoUppTcpIp
+            let tcpConfig = VTPDeviceTcpIpConfiguration()
+            tcpConfig.ipAddress = identifier
+            tcpConfig.port = 12000
+            connectionInfo.tcpIpConfiguration = tcpConfig
+        } else {
+            // Smart device type selection based on name
+            // Removed RBA check as enum was not found/supported in this version
+            connectionInfo.deviceType = VTPDeviceTypeIngenicoMobyBluetooth
+            connectionInfo.identifier = identifier
+        }
+        
+        do {
+            try vtp?.startSession(with: connectionInfo)
+            // Note: Connection success is reported via deviceDidConnect delegate
+            result(true)
+        } catch {
+            print("[\(Self.TAG)] Connect Error: \(error)")
+            result(FlutterError(code: "CONNECT_ERROR", message: error.localizedDescription, details: nil))
         }
     }
     
-    // MARK: - Process Payment
+    // MARK: - 4. Process Payment
     private func processPayment(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        guard connectedDevice != nil else {
-            print("[\(Self.TAG)] Error: No device connected")
-            result(FlutterError(code: "SDK_ERROR", message: "SDK not initialized or device not connected", details: nil))
-            return
-        }
-        
         guard let args = call.arguments as? [String: Any],
-              let amount = args["amount"] as? Double else {
-            print("[\(Self.TAG)] Error: Payment amount missing")
-            result(FlutterError(code: "ARGS_ERROR", message: "Payment amount missing", details: nil))
+              let amountDouble = args["amount"] as? Double else {
+            result(FlutterError(code: "ARGS", message: "Amount required", details: nil))
             return
         }
         
-        print("[\(Self.TAG)] Processing payment for amount: \(amount)")
+        self.resultCallback = result
         
-        // TODO: Replace with actual SDK payment processing
-        // Create SaleRequest with amount
-        // Process through triPOS SDK
-        // Use reflection to parse SaleResponse
+        print("[\(Self.TAG)] Processing payment: \(amountDouble)")
         
-        // Simulate payment flow
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.sendEvent(type: "message", message: "请插入芯片卡")
-        }
+        // 4.1 Configure Transaction
+        // Assuming default configuration from init is sufficient.
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            self.sendEvent(type: "message", message: "正在授权...")
-        }
+        // 4.2 Create Sale Request
+        let saleRequest = VTPSaleRequest()
+        saleRequest.transactionAmount = NSDecimalNumber(value: amountDouble)
+        saleRequest.referenceNumber = "REF_\(Int(Date().timeIntervalSince1970))"
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-            // Simulate successful payment response
-            let response: [String: Any] = [
-                "isApproved": true,
-                "authCode": "IOS_AUTH_\(Int.random(in: 1000...9999))",
-                "transactionId": "TRANS_\(Int(Date().timeIntervalSince1970))",
-                "message": "Approved",
-                "amount": String(format: "%.2f", amount),
-                "rawResponse": "Mock iOS response for amount: \(amount)"
-            ]
+        // 4.3 Process Sale
+        vtp?.processSaleRequest(saleRequest, completionHandler: { [weak self] (response: VTPSaleResponse?) in
+            guard let self = self else { return }
             
-            print("[\(Self.TAG)] Payment response: isApproved=\(response["isApproved"] ?? false)")
-            result(response)
+            if let resp = response {
+                let resultMap = self.parseResponse(resp)
+                print("[\(Self.TAG)] Payment finished: \(resultMap)")
+                self.resultCallback?(resultMap)
+            } else {
+                self.resultCallback?(FlutterError(code: "UNKNOWN", message: "No response", details: nil))
+            }
+            self.resultCallback = nil
+            
+        }, errorHandler: { [weak self] (error: Error?) in
+            guard let self = self else { return }
+            let errorMsg = error?.localizedDescription ?? "Unknown error"
+            print("[\(Self.TAG)] Payment Error: \(errorMsg)")
+            self.resultCallback?(FlutterError(code: "SALE_ERROR", message: errorMsg, details: nil))
+            self.resultCallback = nil
+        })
+    }
+    
+    private func parseResponse(_ response: VTPSaleResponse) -> [String: Any] {
+        var isApproved = false
+        if response.transactionStatus == VTPTransactionStatusApproved {
+            isApproved = true
+        }
+        
+        // Corrected property names based on VTPReceiptData+Extensions.swift
+        let authCode = response.host?.approvalNumber ?? ""
+        let transactionId = response.host?.transactionID ?? ""
+        let message = response.host?.hostResponseCode ?? (isApproved ? "Approved" : "Declined")
+        let amount = response.approvedAmount?.stringValue ?? "0.00"
+        
+        return [
+            "isApproved": isApproved,
+            "authCode": authCode,
+            "transactionId": transactionId,
+            "message": message,
+            "amount": amount,
+            "rawResponse": response.description
+        ]
+    }
+    
+    // MARK: - 5. Disconnect
+    private func disconnect(result: @escaping FlutterResult) {
+        do {
+            try vtp?.closeSession()
+            print("[\(Self.TAG)] Session closed")
+            result(true)
+        } catch {
+            result(FlutterError(code: "DISCONNECT_ERROR", message: error.localizedDescription, details: nil))
         }
     }
     
-    // MARK: - Disconnect
-    private func disconnect(result: @escaping FlutterResult) {
-        print("[\(Self.TAG)] Disconnecting device...")
+    // MARK: - VTPDelegate Implementation
+    
+    // Scan Results
+    public func onReturnBluetoothScanResults(_ devices: [VTPBluetoothDevice]!) {
+        print("[\(Self.TAG)] Scan results received: \(devices?.count ?? 0) devices")
         
-        // TODO: Replace with actual SDK disconnect
-        // sharedVTP?.deinitialize()
+        guard let scanResult = self.scanResult else { return }
         
-        connectedDevice = nil
-        sendEvent(type: "disconnected", message: "Device disconnected")
+        let list = devices?.map { device -> [String: String] in
+            return [
+                "name": device.manufacturer ?? "Unknown Device",
+                "identifier": device.serialNumber ?? ""
+            ]
+        } ?? []
         
-        print("[\(Self.TAG)] Device disconnected successfully")
-        result(true)
+        scanResult(list)
+        self.scanResult = nil
     }
     
-    // MARK: - Event Channel Handler
+    public func deviceDidConnect(_ description: String!, model: String!, serialNumber: String!, firmwareVersion: String!, configurationVersion: String!, batteryPercentage: String!, batteryLevel: String!) {
+        let msg = "Device Connected: \(model ?? "") (\(serialNumber ?? ""))"
+        print("[\(Self.TAG)] \(msg)")
+        sendEvent(type: "connected", message: msg)
+    }
+    
+    // Fallback
+    public func deviceDidConnect(_ description: String!, model: String!, serialNumber: String!) {
+        let msg = "Device Connected: \(model ?? "") (\(serialNumber ?? ""))"
+        print("[\(Self.TAG)] \(msg)")
+        sendEvent(type: "connected", message: msg)
+    }
+    
+    public func deviceDidDisconnect() {
+        print("[\(Self.TAG)] Device Disconnected")
+        sendEvent(type: "disconnected", message: "Device Disconnected")
+    }
+    
+    public func deviceDidError(_ error: Error!) {
+        print("[\(Self.TAG)] Device Error: \(error.localizedDescription)")
+        sendEvent(type: "error", message: error.localizedDescription)
+    }
+    
+    public func deviceInitialization(inProgress currentProgress: Double, description: String!, model: String!, serialNumber: String!, initializationStatus: VTPInitializationStatus) {
+        var statusStr = "Initializing"
+        
+        // Use ObjC Enum cases
+        switch initializationStatus {
+        case VTPInitializationStatusUpdatingFirmware: statusStr = "Updating Firmware"
+        case VTPInitializationStatusUpdatingFiles: statusStr = "Updating Files"
+        case VTPInitializationStatusConfiguringEmv: statusStr = "Configuring EMV"
+        case VTPInitializationStatusRebootingDevice: statusStr = "Rebooting Device"
+        default: statusStr = "Processing..."
+        }
+        
+        let msg = String(format: "%@ (%.0f%%)", statusStr, currentProgress * 100)
+        print("[\(Self.TAG)] Init Progress: \(msg)")
+        sendEvent(type: "message", message: msg)
+    }
+    
+    public func onDisplayText(_ text: String!) {
+        sendEvent(type: "message", message: text)
+    }
+    
+    public func onDisplayText(_ text: String!, identifier: VTPTextIdentifier) {
+        sendEvent(type: "message", message: text)
+    }
+    
+    public func onPromptUserForCard(_ prompt: String!) {
+        sendEvent(type: "message", message: prompt ?? "Please insert/swipe card")
+    }
+    
+    public func onRemoveCard() {
+        sendEvent(type: "message", message: "Please remove card")
+    }
+    
+    // MARK: - VTPDeviceInteractionDelegate Additional Methods
+    
+    public func onAmountConfirmation(_ amount: NSDecimalNumber!) async -> Bool {
+        // Auto-confirm amount for headless operation
+        return true
+    }
+    
+    public func onAmountConfirmation(withPrompt prompt: String!, completionHandler: @escaping VPDYesNoInputCompletionHandler) {
+        // Auto-confirm amount
+        completionHandler(true)
+    }
+    
+    public func onNumericInput(_ numericInputType: VTPNumericInputType, completionHandler: @escaping VPDKeyboardNumericInputCompletionHandler) {
+        // Return empty or default for numeric input as we can't prompt user easily
+        completionHandler("")
+    }
+    
+    public func onSelectApplication(_ applications: [Any], completionHandler: @escaping VPDChoiceInputCompletionHandler) {
+        // Auto-select first application if available
+        if !applications.isEmpty {
+            completionHandler(0)
+        } else {
+            completionHandler(-1)
+        }
+    }
+    
+    public func onSelection(with choices: [Any], for selectionType: VTPSelectionType, completionHandler: @escaping VPDChoiceInputCompletionHandler) {
+        // Auto-select first choice if available
+        if !choices.isEmpty {
+            completionHandler(0)
+        } else {
+            completionHandler(-1)
+        }
+    }
+    
+    public func onDisplayDccConfirmation(for foreignTransactionAmount: String, foreignCurrencyCode: String, conversionRate: String, transactionCurrencyCode: String, completionHandlder: @escaping VPDDccInputCompletionHandler, errorHandler: @escaping VPDErrorHandler) {
+        // Auto-confirm DCC
+        completionHandlder(true)
+    }
+    
+    // Pairing Confirmation
+    public func onReturnPairingConfirmation(_ ledSequence: [Any]!, deviceName: String!, callback: (any VPDPairingConfirmationCallback)!) {
+        print("[\(Self.TAG)] Pairing confirmation required for \(deviceName ?? "")")
+        callback.confirm()
+    }
+
+    // MARK: - FlutterStreamHandler
     public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         self.eventSink = events
-        print("[\(Self.TAG)] Event stream listener attached")
         return nil
     }
     
     public func onCancel(withArguments arguments: Any?) -> FlutterError? {
         self.eventSink = nil
-        print("[\(Self.TAG)] Event stream listener cancelled")
         return nil
     }
     
-    // MARK: - Helper Methods
     private func sendEvent(type: String, message: String?) {
-        guard let sink = eventSink else {
-            print("[\(Self.TAG)] Warning: No event sink available")
-            return
-        }
-        
-        let event: [String: Any?] = [
-            "type": type,
-            "message": message,
-            "data": nil
-        ]
-        
+        guard let sink = eventSink else { return }
         DispatchQueue.main.async {
-            sink(event)
-            print("[\(Self.TAG)] Event sent: type=\(type), message=\(message ?? "nil")")
+            sink([
+                "type": type,
+                "message": message ?? ""
+            ])
         }
     }
 }
