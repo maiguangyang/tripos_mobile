@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
@@ -46,6 +47,11 @@ import com.vantiv.triposmobilesdk.requests.SaleRequest
 import com.vantiv.triposmobilesdk.responses.SaleResponse
 
 class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler {
+    
+    companion object {
+        private const val TAG = "TriPOSMobile"
+    }
+    
     private lateinit var channel: MethodChannel
     private lateinit var eventChannel: EventChannel
     private lateinit var context: Context
@@ -89,28 +95,46 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
 
     private fun initializeSdk(config: Map<String, Any>, result: Result) {
         try {
+            Log.d(TAG, "Initializing triPOS SDK...")
+            
+            // Validate required parameters
+            val acceptorId = config["acceptorId"] as? String
+            val accountId = config["accountId"] as? String
+            val accountToken = config["accountToken"] as? String
+            
+            if (acceptorId.isNullOrEmpty() || accountId.isNullOrEmpty() || accountToken.isNullOrEmpty()) {
+                Log.e(TAG, "Missing required credentials")
+                result.error("INVALID_CONFIG", "Missing required credentials (acceptorId, accountId, or accountToken)", null)
+                return
+            }
+            
             sharedVtp = triPOSMobileSDK.getSharedVtp()
             isProductionMode = (config["isProduction"] as? Boolean) ?: false
+            Log.d(TAG, "Production mode: $isProductionMode")
 
             savedHostConfig = HostConfiguration()
             savedHostConfig?.apply {
-                setAcceptorId(config["acceptorId"] as? String)
-                setAccountId(config["accountId"] as? String)
-                setAccountToken(config["accountToken"] as? String)
+                setAcceptorId(acceptorId)
+                setAccountId(accountId)
+                setAccountToken(accountToken)
                 setApplicationId((config["applicationId"] as? String) ?: "12345")
                 setApplicationName((config["applicationName"] as? String) ?: "FlutterPlugin")
                 setApplicationVersion((config["applicationVersion"] as? String) ?: "1.0.0")
                 setPaymentProcessor(PaymentProcessor.Worldpay)
             }
+            Log.d(TAG, "Host configuration created")
 
             savedAppConfig = ApplicationConfiguration()
             savedAppConfig?.apply {
                 setApplicationMode(if (isProductionMode) ApplicationMode.Production else ApplicationMode.TestCertification)
                 setMarketCode(MarketCode.Retail)
             }
+            Log.d(TAG, "Application configuration created")
 
+            Log.i(TAG, "SDK initialized successfully")
             result.success(true)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize SDK", e)
             result.error("INIT_ERROR", e.message, null)
         }
     }
@@ -133,26 +157,25 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
             tcpConfig.setPort(12000)
             devConfig.setTcpIpConfiguration(tcpConfig)
         } else {
-            // 蓝牙连接
+            // Bluetooth connection
+            Log.d(TAG, "Configuring Bluetooth device: $identifier")
             devConfig.setDeviceType(DeviceType.IngenicoRuaBluetooth)
             
-            // --- 修复点 1: 直接设置 identifier ---
-            // 之前报错说 BluetoothConfiguration 类找不到。
-            // 根据文档第 29 页，DeviceConfiguration 有个 identifier 属性。
-            // 我们尝试直接设置它。如果 setIdentifier 不存在，尝试 setBluetoothIdentifier。
-            // 为了最大兼容性，我们使用反射或者尝试最可能的字段。
-            // 这里假设 setIdentifier 是通用的设备ID设置方法。
             try {
-                // 尝试方法 A: 直接设置 identifier (部分版本 SDK 支持)
-                // devConfig.setIdentifier(identifier) 
-                
-                // 尝试方法 B: 如果是 Kotlin 属性
-                 devConfig.identifier = identifier
+                // Set bluetooth identifier
+                devConfig.identifier = identifier
+                Log.d(TAG, "Bluetooth identifier set successfully")
             } catch (e: Throwable) {
-                // 如果属性赋值失败（例如它是 protected），尝试查找 setBluetoothIdentifier
-                // 由于无法确定 SDK 确切签名，这里暂时注释掉复杂的配置。
-                // 如果您的 SDK 版本要求 BluetoothConfiguration，请检查您的依赖是否正确。
-                // 既然编译报错类不存在，我们只能假设 identifier 就在 DeviceConfiguration 上。
+                Log.e(TAG, "Failed to set bluetooth identifier, trying alternative method", e)
+                try {
+                    // Alternative: try setIdentifier method if property access fails
+                    val setIdentifierMethod = devConfig.javaClass.getMethod("setIdentifier", String::class.java)
+                    setIdentifierMethod.invoke(devConfig, identifier)
+                    Log.d(TAG, "Bluetooth identifier set via setter method")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Failed to set bluetooth identifier via all methods", e2)
+                    sendEvent("error", "Failed to configure bluetooth: ${e2.message}")
+                }
             }
         }
         
@@ -165,19 +188,25 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
 
         Thread {
             try {
+                Log.d(TAG, "Starting device connection...")
                 if (sharedVtp!!.isInitialized) {
+                    Log.d(TAG, "Deinitializing existing VTP instance")
                     sharedVtp!!.deinitialize()
                 }
                 
+                Log.d(TAG, "Initializing VTP with device configuration")
                 sharedVtp!!.initialize(context, config, object : DeviceConnectionListener {
                     override fun onConnected(device: com.vantiv.triposmobilesdk.Device?, desc: String?, model: String?, serial: String?) {
+                        Log.i(TAG, "Device connected: $model ($serial)")
                         sendEvent("connected", "Connected to $model ($serial)")
                         uiHandler.post { result.success(true) }
                     }
                     override fun onDisconnected(device: com.vantiv.triposmobilesdk.Device?) {
+                        Log.i(TAG, "Device disconnected")
                         sendEvent("disconnected", "Device disconnected")
                     }
                     override fun onError(e: Exception?) {
+                        Log.e(TAG, "Connection error", e)
                         sendEvent("error", "Connection Error: ${e?.message}")
                     }
                     override fun onBatteryLow() { sendEvent("message", "WARNING: Battery Low") }
@@ -188,6 +217,7 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
                     }
                 })
             } catch (e: Exception) {
+                Log.e(TAG, "Device connection failed", e)
                 uiHandler.post { result.error("CONNECT_ERROR", e.message, null) }
             }
         }.start()
@@ -195,41 +225,85 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
 
     private fun processPayment(request: Map<String, Any>, result: Result) {
         if (sharedVtp == null || !sharedVtp!!.isInitialized) {
+            Log.e(TAG, "Cannot process payment: SDK not initialized")
             result.error("SDK_ERROR", "SDK not initialized", null)
             return
         }
 
         val amount = (request["amount"] as? Double) ?: 0.0
+        Log.d(TAG, "Processing payment for amount: $amount")
         
         val saleRequest = SaleRequest()
         saleRequest.setTransactionAmount(BigDecimal(amount))
-        
-        // --- 修复点 2: 移除 configuration 设置 ---
-        // 之前报错 Unresolved reference 'configuration'。
-        // 这意味着 SaleRequest 对象上没有这个属性。
-        // 交易配置通常在 initialize 时通过 sharedConfig 完成，
-        // 或者 SDK 使用默认值。为了编译通过，我们移除这行。
-        // saleRequest.configuration = ... (移除)
 
         try {
             sharedVtp!!.processSaleRequest(saleRequest, object : SaleRequestListener {
                 override fun onSaleRequestCompleted(saleResponse: SaleResponse) {
+                    Log.i(TAG, "Sale request completed")
                     uiHandler.post {
-                        // --- 修复点 3: 返回原始 String ---
-                        // 防止 authorizationCode 或 approvalNumber 字段名错误导致编译失败
-                        // 请在 Logcat 中查看这个 rawResponse 来确定正确的字段名
-                        result.success(mapOf(
-                            "isApproved" to true, 
-                            "rawResponse" to saleResponse.toString() 
-                        ))
+                        try {
+                            val responseMap = mutableMapOf<String, Any?>()
+                            
+                            // Use reflection to get all available fields since we don't know exact names
+                            Log.d(TAG, "Inspecting SaleResponse class...")
+                            
+                            // List all methods for debugging
+                            val methods = saleResponse.javaClass.methods
+                            Log.d(TAG, "Available methods in SaleResponse:")
+                            methods.forEach { method ->
+                                if (method.name.startsWith("get") || method.name.startsWith("is")) {
+                                    Log.d(TAG, "  - ${method.name}()")
+                                }
+                            }
+                            
+                            // Try common field name patterns
+                            val possibleFields = mapOf(
+                                "isApproved" to listOf("getIsApproved", "isApproved", "getApproved"),
+                                "authCode" to listOf("getAuthorizationCode", "getAuthCode", "getApprovalCode"),
+                                "transactionId" to listOf("getTransactionId", "getTransactionID", "getTxnId"),
+                                "message" to listOf("getResponseMessage", "getMessage", "getStatusMessage"),
+                                "amount" to listOf("getAuthorizedAmount", "getAmount", "getTransactionAmount")
+                            )
+                            
+                            possibleFields.forEach { (fieldName, methodNames) ->
+                                var found = false
+                                for (methodName in methodNames) {
+                                    try {
+                                        val method = saleResponse.javaClass.getMethod(methodName)
+                                        val value = method.invoke(saleResponse)
+                                        responseMap[fieldName] = value?.toString() ?: ""
+                                        Log.d(TAG, "Found $fieldName via $methodName: $value")
+                                        found = true
+                                        break
+                                    } catch (e: Exception) {
+                                        // Method doesn't exist, try next one
+                                    }
+                                }
+                                if (!found) {
+                                    responseMap[fieldName] = ""
+                                    Log.w(TAG, "Could not find field: $fieldName")
+                                }
+                            }
+                            
+                            // Always include raw response for debugging
+                            responseMap["rawResponse"] = saleResponse.toString()
+                            
+                            Log.d(TAG, "Payment response: $responseMap")
+                            result.success(responseMap)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error parsing sale response", e)
+                            result.error("PARSE_ERROR", "Failed to parse response: ${e.message}", null)
+                        }
                     }
                 }
 
                 override fun onSaleRequestError(e: Exception) {
+                    Log.e(TAG, "Sale request error", e)
                     uiHandler.post { result.error("SALE_ERROR", e.message, null) }
                 }
             })
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to process sale request", e)
             result.error("SALE_EXCEPTION", e.message, null)
         }
     }
