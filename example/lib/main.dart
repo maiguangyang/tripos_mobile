@@ -125,7 +125,6 @@ class _MyAppState extends State<MyApp> {
       // iOS simulator doesn't support Bluetooth
       // On real device, permissions will be requested automatically
       _log('ℹ️  Running on iOS - permissions handled by system');
-      _log('⚠️  Note: iOS Simulator does not support Bluetooth');
       return true; // Skip permission check on iOS
     }
 

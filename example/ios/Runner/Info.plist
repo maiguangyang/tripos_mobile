@@ -81,6 +81,13 @@
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>此应用需要位置权限以保持支付设备连接。</string>
 
+	<!-- 5. 网络安全配置 (允许 HTTP 请求，防止 ATS 拦截) -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+
 	<!-- ========================================== -->
 	<!-- ↑↑↑↑↑↑ triPOS SDK 配置结束 ↑↑↑↑↑↑ -->
 	<!-- ========================================== -->

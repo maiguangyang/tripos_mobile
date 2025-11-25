@@ -108,20 +108,38 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
         self.savedHostConfig = hostConfig
         self.savedAppConfig = appConfig
         
-        // 1.3 Initialize VTPConfiguration
-        let vtpConfig = VTPConfiguration()
-        vtpConfig.hostConfiguration = hostConfig
-        vtpConfig.applicationConfiguration = appConfig
-        
         // 1.4 Call SDK Initialize
         do {
-            try vtp?.initialize(with: vtpConfig)
-            print("[\(Self.TAG)] SDK Initialized successfully")
-            result(nil) // Success returns nil in Dart
+            try internalInitialize()
+            
+            // Verify initialization status
+            if let vtp = self.vtp, vtp.isInitialized {
+                print("[\(Self.TAG)] SDK Initialized successfully")
+                result(nil) // Success returns nil in Dart
+            } else {
+                // Strict Production Check:
+                // If isInitialized is false, it means the SDK failed to complete necessary setup 
+                // (e.g. failed to download BIN table or connect to host).
+                // We must block progress to ensure data integrity and security.
+                print("[\(Self.TAG)] Error: SDK initialized but isInitialized=false")
+                result(FlutterError(code: "INIT_FAILED", message: "SDK Initialization failed. Check network and credentials.", details: nil))
+            }
         } catch {
             print("[\(Self.TAG)] Init Error: \(error)")
             result(FlutterError(code: "INIT_ERROR", message: error.localizedDescription, details: nil))
         }
+    }
+    
+    private func internalInitialize() throws {
+        guard let hostConfig = savedHostConfig, let appConfig = savedAppConfig else {
+            throw NSError(domain: "TriposMobile", code: -1, userInfo: [NSLocalizedDescriptionKey: "No saved configuration"])
+        }
+        
+        let vtpConfig = VTPConfiguration()
+        vtpConfig.hostConfiguration = hostConfig
+        vtpConfig.applicationConfiguration = appConfig
+        
+        try vtp?.initialize(with: vtpConfig)
     }
     
     // MARK: - 2. Scan Devices (SDK Method)
@@ -129,6 +147,21 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
         self.scanResult = result
         
         print("[\(Self.TAG)] Starting SDK Bluetooth scan...")
+        
+        // Check if already connected
+        if let vtp = self.vtp, vtp.isConnectedToDevice {
+            print("[\(Self.TAG)] Device already connected. Disconnecting before scan...")
+            do {
+                try vtp.closeSession()
+            } catch {
+                print("[\(Self.TAG)] Warning: Failed to close existing session: \(error)")
+                // If closeSession fails (e.g. "No active session"), the SDK state is likely inconsistent.
+                // Force a hard reset (deinit -> init) to clear the "connected" flag.
+                print("[\(Self.TAG)] State inconsistent. Performing hard reset...")
+                try? vtp.deinitialize()
+                try? internalInitialize()
+            }
+        }
         
         // Create a temporary configuration for scanning
         let vtpConfig = VTPConfiguration()
@@ -139,6 +172,20 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
             try vtp?.scanForDevices(with: vtpConfig)
             // Results will be returned in onReturnBluetoothScanResults
         } catch {
+            let nsError = error as NSError
+            // Code 2147483647 is the "already connected" error
+            if nsError.code == 2147483647 {
+                print("[\(Self.TAG)] Device stuck in connected state. Attempting hard reset...")
+                do {
+                    try vtp?.deinitialize()
+                    try internalInitialize()
+                    try vtp?.scanForDevices(with: vtpConfig)
+                    return // Success on retry
+                } catch {
+                     print("[\(Self.TAG)] Hard reset failed: \(error)")
+                }
+            }
+            
             print("[\(Self.TAG)] Scan Error: \(error)")
             result(FlutterError(code: "SCAN_ERROR", message: error.localizedDescription, details: nil))
             self.scanResult = nil
