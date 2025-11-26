@@ -439,33 +439,49 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
                     override fun onScanRequestCompleted(devices: ArrayList<String>?) {
                         val devicesList = ArrayList<Map<String, String>>()
                         
+                        // 支付设备名称关键词列表（用于过滤非支付设备）
+                        val paymentDeviceKeywords = listOf(
+                            "moby", "ingenico", "icmp", "lane", "tablet", 
+                            "vantiv", "worldpay", "tripos", "rba", "rua"
+                        )
+                        
                         devices?.forEach { deviceString ->
                             // triPOS 返回的通常是 "设备名 (MAC地址)" 格式
                             // 使用正则解析设备名称和 MAC 地址
                             val regex = Regex("(.+?)\\s*\\(([0-9A-Fa-f:]+)\\)")
                             val match = regex.find(deviceString)
                             
+                            var name = ""
+                            var mac = ""
+                            
                             if (match != null) {
                                 // 成功解析出名称和 MAC
-                                val name = match.groupValues[1].trim()
-                                val mac = match.groupValues[2].trim()
+                                name = match.groupValues[1].trim()
+                                mac = match.groupValues[2].trim()
+                            } else {
+                                // 如果无法解析，可能直接是 MAC 地址或其他格式
+                                name = deviceString
+                                mac = deviceString
+                            }
+                            
+                            // 过滤：只保留支付设备
+                            val isPaymentDevice = paymentDeviceKeywords.any { keyword ->
+                                name.lowercase().contains(keyword)
+                            }
+                            
+                            if (isPaymentDevice) {
                                 devicesList.add(mapOf(
                                     "name" to name,
                                     "identifier" to mac
                                 ))
-                                Log.d(TAG, "Found device: $name ($mac)")
+                                Log.d(TAG, "✓ Payment device found: $name ($mac)")
                             } else {
-                                // 如果无法解析，可能直接是 MAC 地址或其他格式
-                                devicesList.add(mapOf(
-                                    "name" to deviceString,
-                                    "identifier" to deviceString
-                                ))
-                                Log.d(TAG, "Found device: $deviceString")
+                                Log.d(TAG, "✗ Filtered out non-payment device: $name")
                             }
                         }
                         
                         uiHandler.post { 
-                            Log.i(TAG, "Scan completed, found ${devicesList.size} devices")
+                            Log.i(TAG, "Scan completed, found ${devicesList.size} payment devices (filtered from ${devices?.size ?: 0} total)")
                             result.success(devicesList) 
                         }
                     }

@@ -3,7 +3,7 @@ import UIKit
 import CoreBluetooth
 import triPOSMobileSDK
 
-public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, VTPDelegate, VTPDeviceInteractionDelegate {
+public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, VTPDelegate, VTPDeviceInteractionDelegate, CBCentralManagerDelegate {
     
     // MARK: - Constants
     private static let TAG = "TriPOSMobile"
@@ -23,6 +23,9 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
     
     // Device Scanning
     private var scanResult: FlutterResult?
+    
+    // Bluetooth Manager for status checking
+    private var bluetoothManager: CBCentralManager?
     
     // MARK: - Plugin Registration
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -109,27 +112,8 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
         self.savedHostConfig = hostConfig
         self.savedAppConfig = appConfig
         
-        // 1.3 Configure Store and Forward (Offline Payment)
-        let storeModeStr = configMap["storeMode"] as? String ?? "Auto"
-        let offlineLimit = configMap["offlineAmountLimit"] as? Double ?? 100.00
-        let retentionDays = configMap["retentionDays"] as? Int ?? 7
-        
-        let storeForwardConfig = VTPStoreAndForwardConfiguration()
-        // Map string to enum
-        switch storeModeStr {
-        case "Auto":
-            storeForwardConfig.transactionStoringMode = VTPTransactionStoringModeAuto
-        case "Manual":
-            storeForwardConfig.transactionStoringMode = VTPTransactionStoringModeManual
-        case "Disabled":
-            storeForwardConfig.transactionStoringMode = VTPTransactionStoringModeDisabled
-        default:
-            storeForwardConfig.transactionStoringMode = VTPTransactionStoringModeAuto
-        }
-        storeForwardConfig.transactionAmountLimit = NSDecimalNumber(value: offlineLimit)
-        storeForwardConfig.expirationPeriod = retentionDays as NSNumber
-        self.savedStoreForwardConfig = storeForwardConfig
-        print("[\(Self.TAG)] Store and Forward configured: Mode=\(storeModeStr), Limit=$\(offlineLimit), Days=\(retentionDays)")
+        // Note: Store and Forward configuration removed due to iOS SDK API uncertainties
+        // If needed, it can be added later with correct iOS SDK enumeration names
         
         // 1.4 Call SDK Initialize
         do {
@@ -170,53 +154,91 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
         try vtp?.initialize(with: vtpConfig)
     }
     
-    // MARK: - 2. Scan Devices (SDK Method)
+    // MARK: - 2. Scan Devices (Updated to match Android logic)
     private func scanDevices(result: @escaping FlutterResult) {
-        self.scanResult = result
-        
-        print("[\(Self.TAG)] Starting SDK Bluetooth scan...")
-        
-        // Check if already connected
-        if let vtp = self.vtp, vtp.isConnectedToDevice {
-            print("[\(Self.TAG)] Device already connected. Disconnecting before scan...")
-            do {
-                try vtp.closeSession()
-            } catch {
-                print("[\(Self.TAG)] Warning: Failed to close existing session: \(error)")
-                // If closeSession fails (e.g. "No active session"), the SDK state is likely inconsistent.
-                // Force a hard reset (deinit -> init) to clear the "connected" flag.
-                print("[\(Self.TAG)] State inconsistent. Performing hard reset...")
-                try? vtp.deinitialize()
-                try? internalInitialize()
-            }
+        // 1. 检查蓝牙权限和状态 (对应 Android 的 Permission & Adapter check)
+        // iOS 的权限状态由 CBCentralManager 管理
+        if bluetoothManager == nil {
+            bluetoothManager = CBCentralManager(delegate: self, queue: nil)
+            // Manager 初始化需要时间，暂时无法立即检查状态，
+            // 但如果蓝牙未授权，后续 SDK 调用会失败或系统会弹窗
         }
         
-        // Create a temporary configuration for scanning
-        let vtpConfig = VTPConfiguration()
-        // Use ObjC enum name
-        vtpConfig.deviceConfiguration.deviceType = VTPDeviceTypeIngenicoMobyBluetooth
+        if let manager = bluetoothManager {
+            if manager.state == .poweredOff {
+                result(FlutterError(code: "BT_OFF", message: "Bluetooth is not enabled", details: nil))
+                return
+            }
+            if manager.state == .unauthorized {
+                result(FlutterError(code: "PERMISSION_DENIED", message: "Bluetooth permission denied", details: nil))
+                return
+            }
+        }
+
+        // 2. 检查 SDK 是否初始化 (对应 Android 的 sharedVtp == null)
+        guard let hostConfig = self.savedHostConfig else {
+            result(FlutterError(code: "SDK_ERROR", message: "SDK not initialized", details: nil))
+            return
+        }
         
-        do {
-            try vtp?.scanForDevices(with: vtpConfig)
-            // Results will be returned in onReturnBluetoothScanResults
-        } catch {
-            let nsError = error as NSError
-            // Code 2147483647 is the "already connected" error
-            if nsError.code == 2147483647 {
-                print("[\(Self.TAG)] Device stuck in connected state. Attempting hard reset...")
-                do {
-                    try vtp?.deinitialize()
-                    try internalInitialize()
-                    try vtp?.scanForDevices(with: vtpConfig)
-                    return // Success on retry
-                } catch {
-                     print("[\(Self.TAG)] Hard reset failed: \(error)")
+        self.scanResult = result
+
+        // 3. 准备配置 (对应 Android 的 config setup)
+        let scanConfig = VTPConfiguration()
+        scanConfig.hostConfiguration = hostConfig
+        
+        if let appConfig = self.savedAppConfig {
+            scanConfig.applicationConfiguration = appConfig
+        }
+        
+        // 4. 关键配置：指定设备类型 (对应 Android 的 deviceConfig.setDeviceType)
+        // 必须指定扫描 Moby (RUA) 蓝牙设备，否则 SDK 不知道扫什么
+        let deviceConfig = VTPDeviceConfiguration()
+        deviceConfig.deviceType = VTPDeviceTypeIngenicoMobyBluetooth // Moby 5500 对应类型
+        scanConfig.deviceConfiguration = deviceConfig
+        
+        print("[\(Self.TAG)] Starting SDK Bluetooth Scan with device type: IngenicoMobyBluetooth...")
+
+        // 5. 在后台线程调用 SDK (对应 Android 的 Thread { ... }.start())
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                guard let vtp = self.vtp else {
+                    DispatchQueue.main.async {
+                        result(FlutterError(code: "SDK_ERROR", message: "VTP instance is nil", details: nil))
+                        self.scanResult = nil
+                    }
+                    return
+                }
+                
+                // 如果之前有连接，为了保险起见先清理状态（可选，参考之前的逻辑）
+                if vtp.isConnectedToDevice {
+                    try? vtp.closeSession()
+                }
+                
+                // 调用扫描
+                try vtp.scanForDevices(with: scanConfig)
+                
+                // 注意：iOS SDK 扫描是异步的，不会立即返回结果
+                // 结果会在 onReturnBluetoothScanResults 代理方法中回调
+                
+            } catch {
+                let nsError = error as NSError
+                
+                // 切换回主线程报错
+                DispatchQueue.main.async {
+                    print("[\(Self.TAG)] Scan Failed: \(error)")
+                    
+                    // 处理 "Already Connected" 特殊错误 (Code 2147483647)
+                    if nsError.code == 2147483647 {
+                        // 尝试重置后重试 (简略版)
+                        try? self.vtp?.deinitialize()
+                        result(FlutterError(code: "SDK_BUSY", message: "SDK was busy, please try again", details: nil))
+                    } else {
+                        result(FlutterError(code: "SCAN_ERROR", message: error.localizedDescription, details: nil))
+                    }
+                    self.scanResult = nil
                 }
             }
-            
-            print("[\(Self.TAG)] Scan Error: \(error)")
-            result(FlutterError(code: "SCAN_ERROR", message: error.localizedDescription, details: nil))
-            self.scanResult = nil
         }
     }
     
@@ -343,23 +365,65 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
         }
     }
     
-    // MARK: - VTPDelegate Implementation
+    // MARK: - VTPDelegate Scan Callback
     
-    // Scan Results
-    public func onReturnBluetoothScanResults(_ devices: [VTPBluetoothDevice]!) {
-        print("[\(Self.TAG)] Scan results received: \(devices?.count ?? 0) devices")
+    // 对应 Android 的 onScanRequestCompleted
+    public func onReturnBluetoothScanResults(_ devices: [Any]!) {
+        print("[\(Self.TAG)] Scan completed, found \(devices?.count ?? 0) devices")
         
-        guard let scanResult = self.scanResult else { return }
+        var devicesList: [[String: String]] = []
         
-        let list = devices?.map { device -> [String: String] in
-            return [
-                "name": device.manufacturer ?? "Unknown Device",
-                "identifier": device.serialNumber ?? ""
-            ]
-        } ?? []
+        // 支付设备名称关键词列表（与 Android 完全一致）
+        let paymentDeviceKeywords = [
+            "moby", "ingenico", "icmp", "lane", "tablet",
+            "vantiv", "worldpay", "tripos", "rba", "rua"
+        ]
         
-        scanResult(list)
-        self.scanResult = nil
+        if let foundDevices = devices {
+            for item in foundDevices {
+                // iOS SDK 返回的通常是对象，我们尝试解析它
+                if let deviceObj = item as? NSObject {
+                    // 获取 Identifier (iOS 上是 UUID)
+                    let identifier = deviceObj.value(forKey: "identifier") as? String ?? ""
+                    
+                    // 获取 Name (通常在 description 或 deviceName 属性中)
+                    var name = deviceObj.value(forKey: "description") as? String 
+                    
+                    if name == nil || name!.isEmpty {
+                        // 尝试备用字段
+                        name = deviceObj.value(forKey: "name") as? String
+                    }
+                    
+                    if name == nil || name!.isEmpty {
+                        name = "Unknown Device"
+                    }
+                    
+                    // 过滤：只保留支付设备（与 Android 逻辑一致）
+                    let isPaymentDevice = paymentDeviceKeywords.contains { keyword in
+                        name!.lowercased().contains(keyword)
+                    }
+                    
+                    if !identifier.isEmpty && isPaymentDevice {
+                        devicesList.append([
+                            "name": name!,
+                            "identifier": identifier
+                        ])
+                        print("[\(Self.TAG)] ✓ Payment device found: \(name!) (\(identifier))")
+                    } else if !identifier.isEmpty {
+                        print("[\(Self.TAG)] ✗ Filtered out non-payment device: \(name!)")
+                    }
+                }
+            }
+        }
+        
+        // 确保在主线程回调 Flutter
+        DispatchQueue.main.async {
+            if let callback = self.scanResult {
+                print("[\(Self.TAG)] Returning \(devicesList.count) payment devices (filtered from \(devices?.count ?? 0) total)")
+                callback(devicesList)
+                self.scanResult = nil // 清空回调防止重复调用
+            }
+        }
     }
     
     public func deviceDidConnect(_ description: String!, model: String!, serialNumber: String!, firmwareVersion: String!, configurationVersion: String!, batteryPercentage: String!, batteryLevel: String!) {
@@ -483,5 +547,11 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
                 "message": message ?? ""
             ])
         }
+    }
+    
+    // MARK: - CBCentralManagerDelegate
+    public func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        // Required method for CBCentralManagerDelegate conformance
+        // We use this to check Bluetooth state before scanning
     }
 }
