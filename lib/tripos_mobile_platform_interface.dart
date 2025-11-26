@@ -51,6 +51,11 @@ class TriposConfiguration {
   final String applicationVersion; // e.g. "1.0.0"
   final bool isProduction; // Production vs Test mode
 
+  // Store and Forward (Offline Payment) Configuration
+  final String storeMode; // "Auto", "Manual", "Disabled"
+  final double offlineAmountLimit; // Single transaction limit for offline
+  final int retentionDays; // Days to retain offline transactions
+
   TriposConfiguration({
     required this.acceptorId,
     required this.accountId,
@@ -59,6 +64,9 @@ class TriposConfiguration {
     this.applicationName = "FlutterApp",
     this.applicationVersion = "1.0.0",
     this.isProduction = false, // Default to test mode for safety
+    this.storeMode = "Auto", // Default to Auto mode
+    this.offlineAmountLimit = 100.00, // Default $100 limit
+    this.retentionDays = 7, // Default 7 days retention
   });
 
   Map<String, dynamic> toMap() {
@@ -70,6 +78,9 @@ class TriposConfiguration {
       'applicationName': applicationName,
       'applicationVersion': applicationVersion,
       'isProduction': isProduction,
+      'storeMode': storeMode,
+      'offlineAmountLimit': offlineAmountLimit,
+      'retentionDays': retentionDays,
     };
   }
 }
@@ -112,6 +123,7 @@ class PaymentResponse {
   final String? authCode;
   final String? amount; // Authorized amount
   final String? rawResponse; // Raw SDK response for debugging
+  final bool isOffline; // True if transaction was stored offline
 
   PaymentResponse({
     required this.transactionId,
@@ -120,6 +132,7 @@ class PaymentResponse {
     this.authCode,
     this.amount,
     this.rawResponse,
+    this.isOffline = false,
   });
 
   factory PaymentResponse.fromMap(Map<dynamic, dynamic> map) {
@@ -130,6 +143,7 @@ class PaymentResponse {
       authCode: map['authCode'] as String?,
       amount: map['amount'] as String?,
       rawResponse: map['rawResponse'] as String?,
+      isOffline: map['isOffline'] as bool? ?? false,
     );
   }
 }

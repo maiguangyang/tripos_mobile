@@ -18,6 +18,7 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
     // Configuration storage
     private var savedHostConfig: VTPHostConfiguration?
     private var savedAppConfig: VTPApplicationConfiguration?
+    private var savedStoreForwardConfig: VTPStoreAndForwardConfiguration?
     private var isProductionMode: Bool = false
     
     // Device Scanning
@@ -108,6 +109,28 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
         self.savedHostConfig = hostConfig
         self.savedAppConfig = appConfig
         
+        // 1.3 Configure Store and Forward (Offline Payment)
+        let storeModeStr = configMap["storeMode"] as? String ?? "Auto"
+        let offlineLimit = configMap["offlineAmountLimit"] as? Double ?? 100.00
+        let retentionDays = configMap["retentionDays"] as? Int ?? 7
+        
+        let storeForwardConfig = VTPStoreAndForwardConfiguration()
+        // Map string to enum
+        switch storeModeStr {
+        case "Auto":
+            storeForwardConfig.transactionStoringMode = VTPTransactionStoringModeAuto
+        case "Manual":
+            storeForwardConfig.transactionStoringMode = VTPTransactionStoringModeManual
+        case "Disabled":
+            storeForwardConfig.transactionStoringMode = VTPTransactionStoringModeDisabled
+        default:
+            storeForwardConfig.transactionStoringMode = VTPTransactionStoringModeAuto
+        }
+        storeForwardConfig.transactionAmountLimit = NSDecimalNumber(value: offlineLimit)
+        storeForwardConfig.expirationPeriod = retentionDays as NSNumber
+        self.savedStoreForwardConfig = storeForwardConfig
+        print("[\(Self.TAG)] Store and Forward configured: Mode=\(storeModeStr), Limit=$\(offlineLimit), Days=\(retentionDays)")
+        
         // 1.4 Call SDK Initialize
         do {
             try internalInitialize()
@@ -138,6 +161,11 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
         let vtpConfig = VTPConfiguration()
         vtpConfig.hostConfiguration = hostConfig
         vtpConfig.applicationConfiguration = appConfig
+        
+        // Apply Store and Forward configuration
+        if let storeForwardConfig = savedStoreForwardConfig {
+            vtpConfig.storeAndForwardConfiguration = storeForwardConfig
+        }
         
         try vtp?.initialize(with: vtpConfig)
     }
@@ -283,12 +311,23 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
         let message = response.host?.hostResponseCode ?? (isApproved ? "Approved" : "Declined")
         let amount = response.approvedAmount?.stringValue ?? "0.00"
         
+        // Check if transaction was stored offline
+        var isOffline = false
+        if let stored = response.value(forKey: "isStored") as? Bool {
+            isOffline = stored
+        }
+        
+        if isOffline {
+            print("[\(Self.TAG)] ⚠️ Transaction stored offline - will be forwarded when connection available")
+        }
+        
         return [
             "isApproved": isApproved,
             "authCode": authCode,
             "transactionId": transactionId,
             "message": message,
             "amount": amount,
+            "isOffline": isOffline,
             "rawResponse": response.description
         ]
     }

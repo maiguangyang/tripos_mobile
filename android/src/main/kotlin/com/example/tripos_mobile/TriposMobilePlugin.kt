@@ -29,6 +29,7 @@ import com.vantiv.triposmobilesdk.TcpIpConfiguration
 // 移除 BluetoothConfiguration 引用，因为它导致报错
 // import com.vantiv.triposmobilesdk.BluetoothConfiguration 
 import com.vantiv.triposmobilesdk.TransactionConfiguration
+import com.vantiv.triposmobilesdk.StoreAndForwardConfiguration
 
 // --- 监听器 ---
 import com.vantiv.triposmobilesdk.DeviceConnectionListener
@@ -41,6 +42,7 @@ import com.vantiv.triposmobilesdk.enums.PaymentProcessor
 import com.vantiv.triposmobilesdk.enums.ApplicationMode
 import com.vantiv.triposmobilesdk.enums.MarketCode
 import com.vantiv.triposmobilesdk.enums.CurrencyCode
+import com.vantiv.triposmobilesdk.enums.TransactionStoringMode
 
 // --- 请求与响应 ---
 import com.vantiv.triposmobilesdk.requests.SaleRequest
@@ -62,6 +64,7 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
 
     private var savedHostConfig: HostConfiguration? = null
     private var savedAppConfig: ApplicationConfiguration? = null
+    private var savedStoreForwardConfig: StoreAndForwardConfiguration? = null
     private var isProductionMode: Boolean = false
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -131,6 +134,45 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
             }
             Log.d(TAG, "Application configuration created")
 
+            // 3. Store and Forward (Offline Payment) Configuration
+            val storeModeStr = config["storeMode"] as? String ?: "Auto"
+            val offlineLimit = (config["offlineAmountLimit"] as? Double) ?: 100.00
+            val retentionDays = (config["retentionDays"] as? Int) ?: 7
+            
+            savedStoreForwardConfig = StoreAndForwardConfiguration()
+            savedStoreForwardConfig?.apply {
+                try {
+                    transactionStoringMode = TransactionStoringMode.valueOf(storeModeStr)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Invalid storeMode: $storeModeStr, defaulting to Auto")
+                    transactionStoringMode = TransactionStoringMode.Auto
+                }
+                // Set amount limit using the correct method/property
+                try {
+                    // Try direct property assignment first
+                    val limitField = this.javaClass.getDeclaredField("transactionAmountLimit")
+                    limitField.isAccessible = true
+                    limitField.set(this, BigDecimal(offlineLimit))
+                } catch (e: Exception) {
+                    // Fallback: try setter method
+                    try {
+                        val method = this.javaClass.getMethod("setTransactionAmountLimit", BigDecimal::class.java)
+                        method.invoke(this, BigDecimal(offlineLimit))
+                    } catch (e2: Exception) {
+                        Log.w(TAG, "Could not set transaction amount limit: ${e2.message}")
+                    }
+                }
+                // Set retention days using reflection to find correct property name
+                try {
+                    val daysField = this.javaClass.getDeclaredField("expirationPeriod")
+                    daysField.isAccessible = true
+                    daysField.set(this, retentionDays)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not set expiration period: ${e.message}")
+                }
+            }
+            Log.d(TAG, "Store and Forward configured: Mode=$storeModeStr, Limit=$offlineLimit, Days=$retentionDays")
+
             Log.i(TAG, "SDK initialized successfully")
             result.success(true)
         } catch (e: Exception) {
@@ -184,6 +226,12 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
         config.setDeviceConfiguration(devConfig)
         if (savedAppConfig != null) {
             config.setApplicationConfiguration(savedAppConfig)
+        }
+        
+        // Apply Store and Forward configuration for offline payments
+        if (savedStoreForwardConfig != null) {
+            config.storeAndForwardConfiguration = savedStoreForwardConfig
+            Log.d(TAG, "Store and Forward configuration applied")
         }
 
         Thread {
@@ -256,13 +304,14 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
                                 }
                             }
                             
-                            // Try common field name patterns
+                            // Try common field name patterns (including offline payment fields)
                             val possibleFields = mapOf(
                                 "isApproved" to listOf("getIsApproved", "isApproved", "getApproved"),
                                 "authCode" to listOf("getAuthorizationCode", "getAuthCode", "getApprovalCode"),
                                 "transactionId" to listOf("getTransactionId", "getTransactionID", "getTxnId"),
                                 "message" to listOf("getResponseMessage", "getMessage", "getStatusMessage"),
-                                "amount" to listOf("getAuthorizedAmount", "getAmount", "getTransactionAmount")
+                                "amount" to listOf("getAuthorizedAmount", "getAmount", "getTransactionAmount"),
+                                "isStored" to listOf("isStored", "getIsStored", "getStored")
                             )
                             
                             possibleFields.forEach { (fieldName, methodNames) ->
@@ -283,6 +332,15 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
                                     responseMap[fieldName] = ""
                                     Log.w(TAG, "Could not find field: $fieldName")
                                 }
+                            }
+                            
+                            // Special handling for offline transactions
+                            val isStored = (responseMap["isStored"] as? String)?.toBoolean() == true
+                            if (isStored) {
+                                Log.i(TAG, "Transaction stored offline - will be forwarded when connection available")
+                                responseMap["isOffline"] = true
+                            } else {
+                                responseMap["isOffline"] = false
                             }
                             
                             // Always include raw response for debugging

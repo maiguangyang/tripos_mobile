@@ -188,6 +188,10 @@ class _MyAppState extends State<MyApp> {
         applicationId: AppConstants.defaultApplicationId,
         applicationName: AppConstants.defaultApplicationName,
         applicationVersion: AppConstants.defaultApplicationVersion,
+        // Offline payment configuration
+        storeMode: 'Auto', // Auto, Manual, or Disabled
+        offlineAmountLimit: 50.00, // $50 limit for offline transactions
+        retentionDays: 7, // Keep offline transactions for 7 days
       );
 
       await _triposPlugin.initialize(config);
@@ -282,11 +286,22 @@ class _MyAppState extends State<MyApp> {
       _log('Auth Code: ${response.authCode ?? "N/A"}');
       _log('Trans ID: ${response.transactionId}');
       _log('Amount: ${response.amount ?? "N/A"}');
+      if (response.isOffline) {
+        _log(
+          '⚠️  OFFLINE: Transaction stored locally and will be forwarded when online',
+        );
+      }
 
       setState(() {
-        _statusMessage = response.isApproved
-            ? 'PAYMENT APPROVED!'
-            : 'PAYMENT DECLINED';
+        if (response.isOffline) {
+          _statusMessage = response.isApproved
+              ? '💾 STORED OFFLINE (Will forward when online)'
+              : 'PAYMENT DECLINED';
+        } else {
+          _statusMessage = response.isApproved
+              ? 'PAYMENT APPROVED!'
+              : 'PAYMENT DECLINED';
+        }
       });
 
       if (response.isApproved) {
