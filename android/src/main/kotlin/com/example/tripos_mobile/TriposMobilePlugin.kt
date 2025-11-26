@@ -48,6 +48,8 @@ import com.vantiv.triposmobilesdk.enums.TransactionStoringMode
 import com.vantiv.triposmobilesdk.requests.SaleRequest
 import com.vantiv.triposmobilesdk.responses.SaleResponse
 
+import com.vantiv.triposmobilesdk.BluetoothScanRequestListener
+
 class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler {
     
     companion object {
@@ -376,26 +378,113 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
     }
 
     private fun scanDevices(result: Result) {
+        // 1. 权限检查 (Android 12+ 需要 BLUETOOTH_SCAN)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                result.error("PERMISSION_DENIED", "Need BLUETOOTH_CONNECT permission", null)
+            val hasScan = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+            val hasConnect = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            
+            if (!hasScan || !hasConnect) {
+                result.error("PERMISSION_DENIED", "Need BLUETOOTH_SCAN and CONNECT permissions", null)
+                return
+            }
+        } else {
+            // Android 11 及以下需要定位权限才能扫描蓝牙
+            val hasLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (!hasLoc) {
+                result.error("PERMISSION_DENIED", "Need ACCESS_FINE_LOCATION permission", null)
                 return
             }
         }
+
+        // 2. 检查蓝牙适配器状态
         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
         if (bluetoothAdapter?.isEnabled != true) {
-            result.error("BT_OFF", "Bluetooth unavailable", null)
+            result.error("BT_OFF", "Bluetooth is not enabled", null)
             return
         }
-        val devicesList = ArrayList<Map<String, String>>()
-        try {
-            bluetoothAdapter.bondedDevices.forEach { device ->
-                 devicesList.add(mapOf("name" to (device.name ?: "Unknown"), "identifier" to device.address))
+
+        // 3. 检查 SDK 是否初始化
+        if (sharedVtp == null) {
+            // 如果还没初始化，尝试先获取单例
+            try {
+                sharedVtp = triPOSMobileSDK.getSharedVtp()
+            } catch (e: Exception) {
+                result.error("SDK_ERROR", "SDK not initialized", null)
+                return
             }
-            result.success(devicesList)
-        } catch (e: SecurityException) {
-            result.error("PERMISSION_DENIED", "Bluetooth permission missing", null)
         }
+
+        // 4. 准备配置 (扫描需要传入完整的 Config，包括设备类型)
+        val config = Configuration()
+        if (savedHostConfig != null) {
+            config.hostConfiguration = savedHostConfig
+        }
+        if (savedAppConfig != null) {
+            config.applicationConfiguration = savedAppConfig
+        }
+        
+        // 关键：必须指定要扫描的设备类型，否则会报 "device type : Null" 错误
+        val deviceConfig = DeviceConfiguration()
+        deviceConfig.setDeviceType(DeviceType.IngenicoRuaBluetooth) // Moby 5500 使用蓝牙
+        config.setDeviceConfiguration(deviceConfig)
+
+        Log.d(TAG, "Starting SDK Bluetooth Scan...")
+
+        // 5. 在后台线程调用 SDK 扫描方法（避免阻塞主线程）
+        Thread {
+            try {
+                sharedVtp!!.scanBluetoothDevicesWithConfiguration(context, config, object : BluetoothScanRequestListener {
+                    
+                    // 扫描成功回调
+                    override fun onScanRequestCompleted(devices: ArrayList<String>?) {
+                        val devicesList = ArrayList<Map<String, String>>()
+                        
+                        devices?.forEach { deviceString ->
+                            // triPOS 返回的通常是 "设备名 (MAC地址)" 格式
+                            // 使用正则解析设备名称和 MAC 地址
+                            val regex = Regex("(.+?)\\s*\\(([0-9A-Fa-f:]+)\\)")
+                            val match = regex.find(deviceString)
+                            
+                            if (match != null) {
+                                // 成功解析出名称和 MAC
+                                val name = match.groupValues[1].trim()
+                                val mac = match.groupValues[2].trim()
+                                devicesList.add(mapOf(
+                                    "name" to name,
+                                    "identifier" to mac
+                                ))
+                                Log.d(TAG, "Found device: $name ($mac)")
+                            } else {
+                                // 如果无法解析，可能直接是 MAC 地址或其他格式
+                                devicesList.add(mapOf(
+                                    "name" to deviceString,
+                                    "identifier" to deviceString
+                                ))
+                                Log.d(TAG, "Found device: $deviceString")
+                            }
+                        }
+                        
+                        uiHandler.post { 
+                            Log.i(TAG, "Scan completed, found ${devicesList.size} devices")
+                            result.success(devicesList) 
+                        }
+                    }
+
+                    // 扫描失败回调
+                    override fun onScanRequestError(e: Exception?) {
+                        uiHandler.post {
+                            Log.e(TAG, "Scan failed", e)
+                            result.error("SCAN_ERROR", e?.message ?: "Unknown scan error", null)
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                uiHandler.post {
+                    Log.e(TAG, "Scan exception", e)
+                    result.error("SCAN_EXCEPTION", e.message, null)
+                }
+            }
+        }.start()
     }
 
     private fun sendEvent(type: String, msg: String?) {
