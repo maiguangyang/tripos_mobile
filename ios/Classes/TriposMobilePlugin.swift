@@ -313,6 +313,12 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
     public func onReturnBluetoothScanResults(_ devices: [Any]!) {
         print("[\(Self.TAG)] Scan completed, found \(devices?.count ?? 0) devices")
         var devicesList: [[String: String]] = []
+
+        // 支付设备名称关键词列表（与 Android 完全一致）
+        let paymentDeviceKeywords = [
+            "mob", "ingenico", "icmp", "lane", "tablet",
+            "vantiv", "worldpay", "tripos", "rba", "rua"
+        ]
         
         if let foundDevices = devices {
             for item in foundDevices {
@@ -321,8 +327,13 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin, FlutterStreamHandler, 
                     var name = deviceObj.value(forKey: "description") as? String 
                     if name == nil { name = deviceObj.value(forKey: "name") as? String }
                     if name == nil { name = "Unknown Device" }
-                    
-                    if !identifier.isEmpty {
+
+                    // 过滤：只保留支付设备（与 Android 逻辑一致）
+                    let isPaymentDevice = paymentDeviceKeywords.contains { keyword in
+                        name!.lowercased().contains(keyword)
+                    }
+
+                    if !identifier.isEmpty && isPaymentDevice {
                         devicesList.append(["name": name!, "identifier": identifier])
                     }
                 }

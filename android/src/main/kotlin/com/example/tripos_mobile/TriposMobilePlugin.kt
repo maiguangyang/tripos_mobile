@@ -441,7 +441,7 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
                         
                         // 支付设备名称关键词列表（用于过滤非支付设备）
                         val paymentDeviceKeywords = listOf(
-                            "moby", "ingenico", "icmp", "lane", "tablet", 
+                            "mob", "ingenico", "icmp", "lane", "tablet", 
                             "vantiv", "worldpay", "tripos", "rba", "rua"
                         )
                         
