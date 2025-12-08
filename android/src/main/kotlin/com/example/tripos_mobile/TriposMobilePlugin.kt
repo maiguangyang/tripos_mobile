@@ -283,8 +283,29 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
         val amount = (request["amount"] as? Double) ?: 0.0
         Log.d(TAG, "Processing payment for amount: $amount")
         
+        // 根据官方 Worldpay 示例配置 SaleRequest
         val saleRequest = SaleRequest()
+        
+        // 交易金额
         saleRequest.setTransactionAmount(BigDecimal(amount))
+        
+        // 关键修复：设置持卡人在场状态（必须字段，防止空指针异常）
+        // 注意方法名是 setCardholderPresentCode (小写 h)
+        saleRequest.setCardholderPresentCode(com.vantiv.triposmobilesdk.enums.CardHolderPresentCode.Present)
+        
+        // 从 Dart 层读取可选字段，如果未提供则使用默认值
+        val laneNumber = (request["laneNumber"] as? String) ?: "1"
+        val referenceNumber = (request["referenceNumber"] as? String) ?: "REF_${System.currentTimeMillis()}"
+        val clerkNumber = (request["clerkNumber"] as? String) ?: "001"
+        val shiftID = (request["shiftID"] as? String) ?: "1"
+        
+        // 设置交易元数据（官方推荐字段）
+        saleRequest.setLaneNumber(laneNumber)              // 收银通道号
+        saleRequest.setReferenceNumber(referenceNumber)    // 参考号（唯一标识）
+        saleRequest.setClerkNumber(clerkNumber)            // 收银员编号
+        saleRequest.setShiftID(shiftID)                    // 班次ID
+        
+        Log.d(TAG, "SaleRequest configured: lane=$laneNumber, ref=$referenceNumber, clerk=$clerkNumber, shift=$shiftID")
 
         try {
             sharedVtp!!.processSaleRequest(saleRequest, object : SaleRequestListener {

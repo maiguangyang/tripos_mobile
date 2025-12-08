@@ -182,9 +182,10 @@ class _MyAppState extends State<MyApp> {
     try {
       // 替换为你的 Worldpay 测试账号信息
       final config = TriposConfiguration(
-        acceptorId: 'YOUR_ACCEPTOR_ID', // 从 Worldpay 门户获取
-        accountId: 'YOUR_ACCOUNT_ID', // 从 Worldpay 门户获取
-        accountToken: 'YOUR_ACCOUNT_TOKEN', // 从 Worldpay 门户获取
+        acceptorId: '874767787', // 从 Worldpay 门户获取
+        accountId: '1091187', // 从 Worldpay 门户获取
+        accountToken:
+            'D59509CCCA5068F9B5D231EAC735B84348CDE8F861B8D5A8BF82B847749B0EB824175F01', // 从 Worldpay 门户获取
         applicationId: AppConstants.defaultApplicationId,
         applicationName: AppConstants.defaultApplicationName,
         applicationVersion: AppConstants.defaultApplicationVersion,
@@ -278,7 +279,15 @@ class _MyAppState extends State<MyApp> {
       // 调用后，SDK 会通过 EventStream 发送 "Please Insert Card"
       // 这里 await 的结果是最终交易结束的结果
       final response = await _triposPlugin.processPayment(
-        PaymentRequest(amount: AppConstants.defaultPaymentAmount),
+        PaymentRequest(
+          amount: AppConstants.defaultPaymentAmount,
+          // 可选：配置交易元数据字段
+          laneNumber: '1', // 收银通道号
+          referenceNumber:
+              'REF_${DateTime.now().millisecondsSinceEpoch}', // 参考号
+          clerkNumber: '001', // 收银员编号
+          shiftID: '1', // 班次ID
+        ),
       );
 
       _log('Transaction Finished.');

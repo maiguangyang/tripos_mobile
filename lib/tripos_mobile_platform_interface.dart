@@ -110,10 +110,26 @@ class TriposDevice {
 
 class PaymentRequest {
   final double amount;
+  final String? laneNumber; // 收银通道号
+  final String? referenceNumber; // 参考号（唯一标识）
+  final String? clerkNumber; // 收银员编号
+  final String? shiftID; // 班次ID
 
-  PaymentRequest({required this.amount});
+  PaymentRequest({
+    required this.amount,
+    this.laneNumber,
+    this.referenceNumber,
+    this.clerkNumber,
+    this.shiftID,
+  });
 
-  Map<String, dynamic> toMap() => {'amount': amount};
+  Map<String, dynamic> toMap() => {
+    'amount': amount,
+    if (laneNumber != null) 'laneNumber': laneNumber,
+    if (referenceNumber != null) 'referenceNumber': referenceNumber,
+    if (clerkNumber != null) 'clerkNumber': clerkNumber,
+    if (shiftID != null) 'shiftID': shiftID,
+  };
 }
 
 class PaymentResponse {
