@@ -9,7 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 // Constants for the app
 class AppConstants {
-  static const double defaultPaymentAmount = 10.50;
+  static const double defaultPaymentAmount = 1.31; // 低于 $10 离线限额
   static const String defaultApplicationId = '1001';
   static const String defaultApplicationName = 'FlutterExample';
   static const String defaultApplicationVersion = '1.0.0';
@@ -67,7 +67,9 @@ class _MyAppState extends State<MyApp> {
     // 使用新的 TriposMobile.events API
     _eventSubscription = _triposPlugin.events.listen(
       (event) {
-        _log('[SDK EVENT] Type: ${event.type} | Msg: ${event.message}');
+        _log(
+          '${DateTime.now().toIso8601String()} [SDK EVENT] Type: ${event.type} | Msg: ${event.message}',
+        );
 
         setState(() {
           // 根据事件类型更新UI
@@ -76,6 +78,12 @@ class _MyAppState extends State<MyApp> {
             case 'displayMessage':
               // SDK 要求显示提示 (如 "请插卡", "输入密码")
               _statusMessage = event.message ?? '';
+              print("message1111111 ${event.message}");
+              break;
+            case 'readyForCard':
+              _statusMessage =
+                  event.message ?? 'Reader ready - please tap/insert/swipe';
+              _showSnackBar(_statusMessage, isError: false);
               break;
             case 'connected':
               _statusMessage = 'Device Connected!';
@@ -128,11 +136,15 @@ class _MyAppState extends State<MyApp> {
       return true; // Skip permission check on iOS
     }
 
-    Map<Permission, PermissionStatus> statuses = await [
+    final permissionList = <Permission>[
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
       Permission.location,
-    ].request();
+    ];
+    // Android 13+ needs通知权限以启动前台服务，否则SDK警告并缩短侦测时间
+    permissionList.add(Permission.notification);
+
+    Map<Permission, PermissionStatus> statuses = await permissionList.request();
 
     bool allGranted = statuses.values.every((status) => status.isGranted);
 

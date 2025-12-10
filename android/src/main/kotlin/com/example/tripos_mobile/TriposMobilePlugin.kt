@@ -308,6 +308,14 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
         Log.d(TAG, "SaleRequest configured: lane=$laneNumber, ref=$referenceNumber, clerk=$clerkNumber, shift=$shiftID")
 
         try {
+            // 关键修复：设置 StatusListener（参考官方示例 SaleFragment.java）
+            // 这个 listener 接收 VtpStatus 更新，确保读卡器正确激活
+            sharedVtp!!.setStatusListener { status ->
+                Log.d(TAG, "VtpStatus: ${status.name}")
+                // 发送状态事件到 Flutter
+                sendEvent("message", "Status: ${status.name}")
+            }
+            
             sharedVtp!!.processSaleRequest(saleRequest, object : SaleRequestListener {
                 override fun onSaleRequestCompleted(saleResponse: SaleResponse) {
                     Log.i(TAG, "Sale request completed")
@@ -382,7 +390,84 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
                     Log.e(TAG, "Sale request error", e)
                     uiHandler.post { result.error("SALE_ERROR", e.message, null) }
                 }
-            })
+            },
+            // 第二个参数：DeviceInteractionListener（基于官方示例实现）
+            object : DeviceInteractionListener {
+                // 1. 金额确认 - 自动确认
+                override fun onAmountConfirmation(
+                    amountConfirmationType: com.vantiv.triposmobilesdk.enums.AmountConfirmationType?,
+                    amount: java.math.BigDecimal?,
+                    callback: DeviceInteractionListener.ConfirmAmountListener?
+                ) {
+                    Log.d(TAG, "Auto-confirming amount: $amount (type: $amountConfirmationType)")
+                    callback?.confirmAmount(true)
+                }
+                
+                // 2. 选择列表 - 自动选择第一个
+                override fun onChoiceSelections(
+                    choices: Array<out String>?,
+                    selectionType: com.vantiv.triposmobilesdk.enums.SelectionType?,
+                    callback: DeviceInteractionListener.SelectChoiceListener?
+                ) {
+                    Log.d(TAG, "Auto-selecting first choice (type: $selectionType)")
+                    callback?.selectChoice(0)
+                }
+                
+                // 3. 数字输入 - 自动输入 0（如小费）
+                override fun onNumericInput(
+                    numericInputType: com.vantiv.triposmobilesdk.enums.NumericInputType?,
+                    callback: DeviceInteractionListener.NumericInputListener?
+                ) {
+                    Log.d(TAG, "Auto-entering 0 for numeric input (type: $numericInputType)")
+                    callback?.enterNumericInput("0.0")
+                }
+                
+                // 4. 选择应用 - 自动选择第一个
+                override fun onSelectApplication(
+                    applications: Array<out String>?,
+                    callback: DeviceInteractionListener.SelectChoiceListener?
+                ) {
+                    Log.d(TAG, "Auto-selecting first application")
+                    callback?.selectChoice(0)
+                }
+                
+                // 5. 提示刷卡
+                override fun onPromptUserForCard(
+                    prompt: String?,
+                    displayTextIdentifiers: com.vantiv.triposmobilesdk.enums.DisplayTextIdentifiers?
+                ) {
+                    Log.d(TAG, "Prompt: $prompt")
+                    sendEvent("message", prompt ?: "Please insert/swipe/tap card")
+                }
+                
+                // 6. 显示文本
+                override fun onDisplayText(
+                    text: String?,
+                    displayTextIdentifiers: com.vantiv.triposmobilesdk.enums.DisplayTextIdentifiers?
+                ) {
+                    Log.d(TAG, "Display: $text")
+                    sendEvent("message", text ?: "")
+                }
+                
+                // 7. 移除卡
+                override fun onRemoveCard() {
+                    Log.d(TAG, "Remove card")
+                    sendEvent("message", "Please remove card")
+                }
+                
+                // 8. 卡已移除
+                override fun onCardRemoved() {
+                    Log.d(TAG, "Card removed")
+                    sendEvent("message", "Card removed")
+                }
+                
+                // 9. 等待提示
+                override fun onWait(message: String?) {
+                    Log.d(TAG, "Wait: $message")
+                    sendEvent("message", message ?: "Please wait...")
+                }
+            }
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to process sale request", e)
             result.error("SALE_EXCEPTION", e.message, null)
