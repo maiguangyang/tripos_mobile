@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:tripos_mobile/tripos_mobile.dart';
 
 void main() {
@@ -65,6 +66,7 @@ class _TriposHomePageState extends State<TriposHomePage> {
   StreamSubscription<String>? _statusSubscription;
   StreamSubscription<Map<String, dynamic>>? _deviceEventSubscription;
 
+  // Configuration for scanning - use specific device type as SDK requires it
   TriposConfiguration get _configuration => TriposConfiguration(
     hostConfiguration: const HostConfiguration(
       acceptorId: _testAcceptorId,
@@ -75,6 +77,31 @@ class _TriposHomePageState extends State<TriposHomePage> {
       applicationVersion: '1.0.0',
     ),
     deviceConfiguration: DeviceConfiguration(
+      // SDK requires specific device type for scanning
+      deviceType: DeviceType.ingenicoMoby5500,
+      identifier: _selectedDevice,
+      terminalId: '1234',
+      contactlessAllowed: true,
+      keyedEntryAllowed: true,
+    ),
+    applicationConfiguration: const ApplicationConfiguration(
+      applicationMode: ApplicationMode.testCertification,
+      idlePrompt: 'triPOS Flutter',
+    ),
+  );
+
+  // Configuration for initialization (with specific device type)
+  TriposConfiguration get _initConfiguration => TriposConfiguration(
+    hostConfiguration: const HostConfiguration(
+      acceptorId: _testAcceptorId,
+      accountId: _testAccountId,
+      accountToken: _testToken,
+      applicationId: '8414',
+      applicationName: 'triPOS Flutter Example',
+      applicationVersion: '1.0.0',
+    ),
+    deviceConfiguration: DeviceConfiguration(
+      // Use Moby5500 for initialization
       deviceType: DeviceType.ingenicoMoby5500,
       identifier: _selectedDevice,
       terminalId: '1234',
@@ -141,24 +168,131 @@ class _TriposHomePageState extends State<TriposHomePage> {
     );
   }
 
+  /// Request all necessary permissions for Bluetooth scanning
+  Future<bool> _requestPermissions() async {
+    setState(() {
+      _status = 'Requesting permissions...';
+    });
+
+    // Request Bluetooth permissions
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.bluetooth,
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.location,
+    ].request();
+
+    // Check if all permissions are granted
+    bool allGranted = true;
+    List<String> deniedPermissions = [];
+
+    if (statuses[Permission.bluetoothScan]?.isDenied == true) {
+      deniedPermissions.add('Bluetooth Scan');
+      allGranted = false;
+    }
+    if (statuses[Permission.bluetoothConnect]?.isDenied == true) {
+      deniedPermissions.add('Bluetooth Connect');
+      allGranted = false;
+    }
+    if (statuses[Permission.location]?.isDenied == true) {
+      deniedPermissions.add('Location');
+      allGranted = false;
+    }
+
+    if (!allGranted) {
+      _showSnackBar(
+        'Missing permissions: ${deniedPermissions.join(", ")}. Please enable in Settings.',
+        isError: true,
+      );
+
+      // Show dialog to open settings
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Permissions Required'),
+            content: Text(
+              'The following permissions are required:\n\n'
+              '• Bluetooth Scan\n'
+              '• Bluetooth Connect\n'
+              '• Location\n\n'
+              'Please enable them in Settings.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  openAppSettings();
+                },
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        );
+      }
+      return false;
+    }
+
+    return true;
+  }
+
   Future<void> _scanDevices() async {
     setState(() {
       _isLoading = true;
+      _status = 'Checking permissions...';
+    });
+
+    // Request permissions first
+    final hasPermissions = await _requestPermissions();
+    if (!hasPermissions) {
+      setState(() {
+        _isLoading = false;
+        _status = 'Permissions denied';
+      });
+      return;
+    }
+
+    setState(() {
       _status = 'Scanning for devices...';
     });
 
     try {
+      // Devices are already filtered and sorted at native level (payment devices first)
       final devices = await _tripos.scanBluetoothDevices(_configuration);
+
+      // Count payment devices (for display purposes)
+
+      final paymentCount = devices.length;
+
       setState(() {
         _devices = devices;
-        _status = 'Found ${devices.length} device(s)';
+        _status = 'Found ${devices.length} device(s) ($paymentCount payment)';
+
+        // Auto-select first device if available (payment devices are at front)
+        if (devices.isNotEmpty && _selectedDevice == null) {
+          _selectedDevice = devices.first;
+        }
       });
 
       if (devices.isEmpty) {
         _showSnackBar('No devices found. Make sure your device is powered on.');
+      } else if (paymentCount > 0) {
+        _showSnackBar('Found $paymentCount payment device(s)');
       }
     } catch (e) {
-      _showSnackBar('Scan error: $e', isError: true);
+      final errorMsg = e.toString();
+      if (errorMsg.contains('permission') || errorMsg.contains('Permission')) {
+        _showSnackBar(
+          'Missing permissions. Please enable in Settings.',
+          isError: true,
+        );
+      } else {
+        _showSnackBar('Scan error: $e', isError: true);
+      }
       setState(() {
         _status = 'Scan failed: $e';
       });
@@ -181,7 +315,8 @@ class _TriposHomePageState extends State<TriposHomePage> {
     });
 
     try {
-      final success = await _tripos.initialize(_configuration);
+      // Use initConfiguration with specific device type for initialization
+      final success = await _tripos.initialize(_initConfiguration);
       setState(() {
         _isInitialized = success;
         _status = success ? 'Initialized' : 'Initialization failed';
@@ -202,6 +337,14 @@ class _TriposHomePageState extends State<TriposHomePage> {
         _isLoading = false;
       });
     }
+  }
+
+  /// Connect to a specific device
+  Future<void> _connectToDevice(String device) async {
+    setState(() {
+      _selectedDevice = device;
+    });
+    await _initialize();
   }
 
   Future<void> _deinitialize() async {
@@ -510,11 +653,58 @@ class _TriposHomePageState extends State<TriposHomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      'Device Connection',
-                      style: theme.textTheme.titleMedium,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Device Connection',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        // Connection status indicator
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _isInitialized
+                                ? Colors.green.withOpacity(0.2)
+                                : Colors.grey.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _isInitialized
+                                    ? Icons.bluetooth_connected
+                                    : Icons.bluetooth_disabled,
+                                size: 16,
+                                color: _isInitialized
+                                    ? Colors.green
+                                    : Colors.grey,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                _isInitialized
+                                    ? 'Connected: ${_selectedDevice ?? "Device"}'
+                                    : 'Disconnected',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _isInitialized
+                                      ? Colors.green
+                                      : Colors.grey,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 16),
+
+                    // Scan button
                     ElevatedButton.icon(
                       onPressed: _isLoading ? null : _scanDevices,
                       icon: _isLoading
@@ -526,38 +716,136 @@ class _TriposHomePageState extends State<TriposHomePage> {
                           : const Icon(Icons.bluetooth_searching),
                       label: const Text('Scan for Devices'),
                     ),
+
+                    // Device List
                     if (_devices.isNotEmpty) ...[
                       const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: _selectedDevice,
-                        decoration: const InputDecoration(
-                          labelText: 'Select Device',
-                          border: OutlineInputBorder(),
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: theme.colorScheme.outline.withOpacity(0.3),
+                          ),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        items: _devices
-                            .map(
-                              (device) => DropdownMenuItem(
-                                value: device,
-                                child: Text(device),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _devices.length,
+                          separatorBuilder: (context, index) => Divider(
+                            height: 1,
+                            color: theme.colorScheme.outline.withOpacity(0.2),
+                          ),
+                          itemBuilder: (context, index) {
+                            final device = _devices[index];
+                            final isConnected =
+                                _isInitialized && _selectedDevice == device;
+                            final isConnecting =
+                                _isLoading && _selectedDevice == device;
+
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 4,
                               ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedDevice = value;
-                          });
-                        },
+                              leading: Icon(
+                                isConnected
+                                    ? Icons.bluetooth_connected
+                                    : Icons.bluetooth,
+                                color: isConnected ? Colors.green : Colors.blue,
+                              ),
+                              title: Text(
+                                device,
+                                style: TextStyle(
+                                  fontWeight: isConnected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: isConnected
+                                      ? Colors.green.shade700
+                                      : null,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: isConnected
+                                  ? const Text(
+                                      'Connected',
+                                      style: TextStyle(
+                                        color: Colors.green,
+                                        fontSize: 12,
+                                      ),
+                                    )
+                                  : null,
+                              trailing: isConnected
+                                  ? OutlinedButton(
+                                      onPressed: _isLoading
+                                          ? null
+                                          : _deinitialize,
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.red,
+                                        side: const BorderSide(
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                      child: const Text('Disconnect'),
+                                    )
+                                  : ElevatedButton(
+                                      onPressed: _isLoading || _isInitialized
+                                          ? null
+                                          : () => _connectToDevice(device),
+                                      child: isConnecting
+                                          ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Text('Connect'),
+                                    ),
+                            );
+                          },
+                        ),
                       ),
+                    ],
+
+                    // Initialize SDK button (separate)
+                    if (_isInitialized) ...[
                       const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: _isLoading || _selectedDevice == null
-                            ? null
-                            : _initialize,
-                        icon: const Icon(Icons.power),
-                        label: const Text('Initialize SDK'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: theme.colorScheme.primary,
-                          foregroundColor: theme.colorScheme.onPrimary,
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.green.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle, color: Colors.green),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'SDK Initialized',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Connected to: ${_selectedDevice ?? "Unknown"}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],

@@ -93,20 +93,51 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             val configMap = call.arguments as? Map<*, *>
             val config = buildConfiguration(configMap)
             
+            Log.i(TAG, "Starting Bluetooth scan...")
+            
             vtp.scanBluetoothDevicesWithConfiguration(ctx, config, object : BluetoothScanRequestListener {
                 override fun onScanRequestCompleted(devices: ArrayList<String>?) {
+                    Log.i(TAG, "Scan completed. Found ${devices?.size ?: 0} device(s): $devices")
+                    
+                    // Filter and sort devices - payment devices first
+                    val paymentKeywords = listOf("mob", "ingenico", "icmp", "lane", "tripos", "worldpay", "vantiv", "rba", "rua")
+                    val paymentDevices = mutableListOf<String>()
+                    val otherDevices = mutableListOf<String>()
+                    
+                    devices?.forEach { device ->
+                        val lowerDevice = device.lowercase()
+                        val isPaymentDevice = paymentKeywords.any { keyword -> lowerDevice.contains(keyword) }
+                        if (isPaymentDevice) {
+                            paymentDevices.add(device)
+                            Log.d(TAG, "✓ Payment device: $device")
+                        } else {
+                            otherDevices.add(device)
+                            Log.d(TAG, "✗ Filtered non-payment device: $device")
+                        }
+                    }
+                    
+                    // Payment devices first, then others
+                    val sortedDevices = ArrayList<String>().apply {
+                        addAll(paymentDevices)
+                        // addAll(otherDevices)
+                    }
+                    
+                    Log.i(TAG, "Filtered: ${paymentDevices.size} payment devices, ${otherDevices.size} other devices")
+                    
                     mainHandler.post {
-                        result.success(devices ?: emptyList<String>())
+                        result.success(sortedDevices)
                     }
                 }
                 
                 override fun onScanRequestError(exception: Exception?) {
+                    Log.e(TAG, "Scan error: ${exception?.message}", exception)
                     mainHandler.post {
                         result.error("SCAN_ERROR", exception?.message ?: "Unknown error", null)
                     }
                 }
             })
         } catch (e: Exception) {
+            Log.e(TAG, "Exception during scan setup: ${e.message}", e)
             result.error("SCAN_ERROR", e.message, null)
         }
     }
@@ -420,9 +451,31 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             
             // Device Configuration
             val deviceConfigMap = configMap["deviceConfiguration"] as? Map<*, *>
+            Log.d(TAG, "deviceConfigMap: $deviceConfigMap")
             val deviceConfig = DeviceConfiguration()
             val deviceTypeStr = deviceConfigMap?.get("deviceType") as? String
-            deviceConfig.deviceType = parseDeviceType(deviceTypeStr)
+            Log.d(TAG, "deviceTypeStr from config: '$deviceTypeStr'")
+            
+            // Log available DeviceType values for debugging
+            val availableTypes = DeviceType.values().toList()
+            Log.d(TAG, "Available DeviceType values: ${availableTypes.map { it.name }}")
+            
+            // Map the device type - use IngenicoRuaBluetooth for Moby 5500 Bluetooth
+            val resolvedType = when {
+                deviceTypeStr?.contains("Moby5500", ignoreCase = true) == true -> {
+                    Log.d(TAG, "Mapping Moby5500 -> IngenicoRuaBluetooth")
+                    DeviceType.IngenicoRuaBluetooth
+                }
+                deviceTypeStr?.contains("Moby8500", ignoreCase = true) == true -> {
+                    Log.d(TAG, "Mapping Moby8500 -> IngenicoRuaBluetooth")
+                    DeviceType.IngenicoRuaBluetooth
+                }
+                else -> parseDeviceType(deviceTypeStr)
+            }
+            
+            deviceConfig.setDeviceType(resolvedType)
+            Log.d(TAG, "Final deviceConfig.deviceType: ${deviceConfig.deviceType.name}")
+            
             deviceConfig.terminalId = deviceConfigMap?.get("terminalId") as? String ?: "1234"
             deviceConfig.terminalType = TerminalType.Mobile
             deviceConfig.identifier = deviceConfigMap?.get("identifier") as? String
@@ -435,17 +488,19 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             config.deviceConfiguration = deviceConfig
             
             // Transaction Configuration
+            // NOTE: Tips and Cashback disabled to avoid DeviceInteractionListener null errors
+            // These features require UI callbacks that are not yet implemented
             val txnConfigMap = configMap["transactionConfiguration"] as? Map<*, *>
             val txnConfig = TransactionConfiguration()
             txnConfig.isEmvAllowed = txnConfigMap?.get("emvAllowed") as? Boolean ?: true
-            txnConfig.isTipAllowed = txnConfigMap?.get("tipAllowed") as? Boolean ?: true
-            txnConfig.isTipEntryAllowed = txnConfigMap?.get("tipEntryAllowed") as? Boolean ?: true
+            txnConfig.isTipAllowed = false  // Disabled - requires DeviceInteractionListener
+            txnConfig.isTipEntryAllowed = false  // Disabled - requires DeviceInteractionListener
             txnConfig.isDebitAllowed = txnConfigMap?.get("debitAllowed") as? Boolean ?: true
-            txnConfig.isCashbackAllowed = txnConfigMap?.get("cashbackAllowed") as? Boolean ?: true
-            txnConfig.isCashbackEntryAllowed = txnConfigMap?.get("cashbackEntryAllowed") as? Boolean ?: true
+            txnConfig.isCashbackAllowed = false  // Disabled - requires DeviceInteractionListener
+            txnConfig.isCashbackEntryAllowed = false  // Disabled - requires DeviceInteractionListener
             txnConfig.isGiftCardAllowed = txnConfigMap?.get("giftCardAllowed") as? Boolean ?: true
             txnConfig.isQuickChipAllowed = txnConfigMap?.get("quickChipAllowed") as? Boolean ?: true
-            txnConfig.isAmountConfirmationEnabled = txnConfigMap?.get("amountConfirmationEnabled") as? Boolean ?: true
+            txnConfig.isAmountConfirmationEnabled = false  // Disabled - requires DeviceInteractionListener
             txnConfig.setDuplicateTransactionsAllowed(txnConfigMap?.get("duplicateTransactionsAllowed") as? Boolean ?: true)
             txnConfig.isPartialApprovalAllowed = txnConfigMap?.get("partialApprovalAllowed") as? Boolean ?: false
             txnConfig.currencyCode = CurrencyCode.USD
@@ -472,20 +527,32 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     private fun parseDeviceType(deviceTypeStr: String?): DeviceType {
-        if (deviceTypeStr.isNullOrEmpty()) {
+        Log.d(TAG, "parseDeviceType called with: '$deviceTypeStr'")
+        Log.d(TAG, "Available DeviceType values: ${DeviceType.values().map { it.name }}")
+        
+        if (deviceTypeStr.isNullOrEmpty() || deviceTypeStr == "none") {
+            Log.w(TAG, "Device type is null/empty/none, returning Null")
             return DeviceType.Null
         }
         
-        // Try to find the DeviceType by name using reflection
-        return try {
-            DeviceType.values().find { 
-                it.name.equals(deviceTypeStr, ignoreCase = true) ||
-                it.name.replace("_", "").equals(deviceTypeStr.replace("_", ""), ignoreCase = true)
-            } ?: DeviceType.Null
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not parse device type: $deviceTypeStr, using Null")
-            DeviceType.Null
-        }
+        // Explicit mapping for known device types
+        val normalizedInput = deviceTypeStr.lowercase().replace("_", "").replace("-", "")
+        
+        val result = DeviceType.values().find { enumValue ->
+            val normalizedEnum = enumValue.name.lowercase().replace("_", "")
+            normalizedEnum == normalizedInput ||
+            // Handle common naming variations
+            (normalizedInput.contains("moby5500") && normalizedEnum.contains("moby5500")) ||
+            (normalizedInput.contains("moby8500") && normalizedEnum.contains("moby8500")) ||
+            (normalizedInput.contains("chipper") && normalizedEnum.contains("chipper")) ||
+            (normalizedInput.contains("lane3000") && normalizedEnum.contains("lane3000")) ||
+            (normalizedInput.contains("lane5000") && normalizedEnum.contains("lane5000")) ||
+            (normalizedInput.contains("lane7000") && normalizedEnum.contains("lane7000")) ||
+            (normalizedInput.contains("lane8000") && normalizedEnum.contains("lane8000"))
+        } ?: DeviceType.Null
+        
+        Log.d(TAG, "Resolved DeviceType: ${result.name}")
+        return result
     }
 
     // Request builders
