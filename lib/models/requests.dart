@@ -200,6 +200,45 @@ class VoidRequest {
   };
 }
 
+/// Linked refund request (uses original transaction ID, no card required)
+class LinkedRefundRequest {
+  /// Transaction ID from original sale transaction
+  final String transactionId;
+
+  /// Refund amount (can be partial or full)
+  final double transactionAmount;
+
+  /// Lane number
+  final String laneNumber;
+
+  /// Reference number for tracking
+  final String referenceNumber;
+
+  /// Clerk number
+  final String? clerkNumber;
+
+  /// Shift ID
+  final String? shiftId;
+
+  const LinkedRefundRequest({
+    required this.transactionId,
+    required this.transactionAmount,
+    this.laneNumber = '1',
+    this.referenceNumber = '',
+    this.clerkNumber,
+    this.shiftId,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'transactionId': transactionId,
+    'transactionAmount': transactionAmount,
+    'laneNumber': laneNumber,
+    'referenceNumber': referenceNumber,
+    'clerkNumber': clerkNumber,
+    'shiftId': shiftId,
+  };
+}
+
 /// Authorization request
 class AuthorizationRequest extends TransactionRequest {
   /// Convenience fee amount

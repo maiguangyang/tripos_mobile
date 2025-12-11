@@ -100,6 +100,14 @@ class TriposMobile {
     return TriposMobilePlatform.instance.processRefund(request);
   }
 
+  /// Process a linked refund (no card required)
+  ///
+  /// Uses the original transaction ID to refund.
+  /// No card swipe/insert/tap needed.
+  Future<RefundResponse> processLinkedRefund(LinkedRefundRequest request) {
+    return TriposMobilePlatform.instance.processLinkedRefund(request);
+  }
+
   /// Process a void transaction
   ///
   /// Voids a previous transaction by its transaction ID.

@@ -66,6 +66,11 @@ abstract class TriposMobilePlatform extends PlatformInterface {
     throw UnimplementedError('processRefund() has not been implemented.');
   }
 
+  /// Process a linked refund (using original transaction ID, no card required)
+  Future<RefundResponse> processLinkedRefund(LinkedRefundRequest request) {
+    throw UnimplementedError('processLinkedRefund() has not been implemented.');
+  }
+
   /// Process a void transaction
   Future<VoidResponse> processVoid(VoidRequest request) {
     throw UnimplementedError('processVoid() has not been implemented.');

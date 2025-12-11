@@ -225,6 +225,15 @@ class SaleResponse extends TransactionResponse {
   /// Tip amount
   final double? tipAmount;
 
+  /// Reference number used for the transaction
+  final String? referenceNumber;
+
+  /// Stored transaction ID (for offline/S&F transactions)
+  final String? storedTransactionId;
+
+  /// Whether this was an offline (Store-and-Forward) transaction
+  final bool isStoredTransaction;
+
   const SaleResponse({
     super.isApproved,
     super.transactionStatus,
@@ -238,6 +247,9 @@ class SaleResponse extends TransactionResponse {
     super.rawResponse,
     this.cashbackAmount,
     this.tipAmount,
+    this.referenceNumber,
+    this.storedTransactionId,
+    this.isStoredTransaction = false,
   });
 
   factory SaleResponse.fromMap(Map<String, dynamic> map) {
@@ -259,6 +271,9 @@ class SaleResponse extends TransactionResponse {
       rawResponse: map,
       cashbackAmount: (map['cashbackAmount'] as num?)?.toDouble(),
       tipAmount: (map['tipAmount'] as num?)?.toDouble(),
+      referenceNumber: map['referenceNumber'] as String?,
+      storedTransactionId: map['storedTransactionId'] as String?,
+      isStoredTransaction: map['isStoredTransaction'] as bool? ?? false,
     );
   }
 

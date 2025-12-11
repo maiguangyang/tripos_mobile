@@ -429,6 +429,8 @@ class _TriposHomePageState extends State<TriposHomePage> {
       setState(() {
         _isLoading = false;
       });
+
+      print("TransactionResult $_transactionResult");
     }
   }
 
@@ -477,6 +479,72 @@ class _TriposHomePageState extends State<TriposHomePage> {
       }
     } catch (e) {
       _showSnackBar('Refund error: $e', isError: true);
+      setState(() {
+        _transactionResult = 'Error: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// Linked refund using original transaction ID (no card required)
+  Future<void> _processLinkedRefund() async {
+    if (!_isInitialized) {
+      _showSnackBar('Please initialize SDK first');
+      return;
+    }
+
+    final amount = double.tryParse(_amountController.text) ?? 0.0;
+    if (amount <= 0) {
+      _showSnackBar('Please enter a valid amount');
+      return;
+    }
+
+    final transactionId = _transactionIdController.text.trim();
+    if (transactionId.isEmpty) {
+      _showSnackBar('Please enter a Transaction ID for linked refund');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _transactionResult = '';
+    });
+
+    try {
+      final response = await _tripos.processLinkedRefund(
+        LinkedRefundRequest(
+          transactionId: transactionId,
+          transactionAmount: amount,
+          referenceNumber: DateTime.now().millisecondsSinceEpoch.toString(),
+        ),
+      );
+
+      setState(() {
+        _transactionResult = _formatTransactionResult(
+          'Linked Refund',
+          response.isApproved,
+          response.transactionStatus.name,
+          response.approvedAmount,
+          response.host?.transactionId,
+          response.host?.authCode,
+          response.card?.maskedCardNumber,
+          response.errorMessage,
+        );
+      });
+
+      if (response.isApproved) {
+        _showSnackBar('Linked refund approved!');
+      } else {
+        _showSnackBar(
+          'Linked refund declined: ${response.errorMessage ?? response.transactionStatus.name}',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      _showSnackBar('Linked refund error: $e', isError: true);
       setState(() {
         _transactionResult = 'Error: $e';
       });
@@ -928,6 +996,23 @@ class _TriposHomePageState extends State<TriposHomePage> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Linked refund button (uses Transaction ID, no card required)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isLoading || !_isInitialized
+                            ? null
+                            : _processLinkedRefund,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepOrange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        icon: const Icon(Icons.link),
+                        label: const Text('LINKED REFUND (by Transaction ID)'),
+                      ),
                     ),
                     if (_isLoading) ...[
                       const SizedBox(height: 16),

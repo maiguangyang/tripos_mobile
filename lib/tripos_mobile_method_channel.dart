@@ -89,6 +89,17 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
   }
 
   @override
+  Future<RefundResponse> processLinkedRefund(
+    LinkedRefundRequest request,
+  ) async {
+    final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'processLinkedRefund',
+      request.toMap(),
+    );
+    return RefundResponse.fromMap(Map<String, dynamic>.from(result ?? {}));
+  }
+
+  @override
   Future<VoidResponse> processVoid(VoidRequest request) async {
     final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
       'processVoid',

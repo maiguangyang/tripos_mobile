@@ -75,6 +75,7 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "deinitialize" -> deinitialize(result)
             "processSale" -> processSale(call, result)
             "processRefund" -> processRefund(call, result)
+            "processLinkedRefund" -> processLinkedRefund(call, result)
             "processVoid" -> processVoid(call, result)
             "processAuthorization" -> processAuthorization(call, result)
             "cancelTransaction" -> cancelTransaction(result)
@@ -333,6 +334,80 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             }, null)
         } catch (e: Exception) {
             result.error("REFUND_ERROR", e.message, null)
+        }
+    }
+
+    // Linked refund - uses original transaction ID instead of card swipe
+    private fun processLinkedRefund(call: MethodCall, result: Result) {
+        Log.i(TAG, "processLinkedRefund called")
+        
+        if (!vtp.isInitialized) {
+            Log.e(TAG, "processLinkedRefund: SDK not initialized")
+            result.error("NOT_INITIALIZED", "SDK is not initialized", null)
+            return
+        }
+        
+        try {
+            val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+            val transactionId = requestMap["transactionId"] as? String
+            val amount = (requestMap["transactionAmount"] as? Number)?.toDouble() ?: 0.0
+            
+            if (transactionId.isNullOrEmpty()) {
+                result.error("INVALID_REQUEST", "transactionId is required for linked refund", null)
+                return
+            }
+            
+            Log.i(TAG, "Linked refund: transactionId=$transactionId, amount=$amount")
+            
+            // Build refund request with original transaction ID
+            val refundRequest = RefundRequest()
+            refundRequest.transactionAmount = java.math.BigDecimal(amount)
+            refundRequest.referenceNumber = requestMap["referenceNumber"] as? String 
+                ?: System.currentTimeMillis().toString()
+            refundRequest.laneNumber = ((requestMap["laneNumber"] as? Number)?.toInt() ?: 1).toString()
+            
+            // Try to set the original transaction ID using reflection
+            try {
+                val methods = refundRequest.javaClass.methods
+                for (method in methods) {
+                    if (method.name.contains("OriginalTransaction", ignoreCase = true) ||
+                        method.name.contains("OriginalReference", ignoreCase = true)) {
+                        Log.d(TAG, "Found method: ${method.name}")
+                        if (method.parameterTypes.size == 1 && method.parameterTypes[0] == String::class.java) {
+                            method.invoke(refundRequest, transactionId)
+                            Log.i(TAG, "Set original transaction ID via ${method.name}")
+                            break
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not set originalTransactionId: ${e.message}")
+            }
+            
+            setupStatusListener()
+            
+            Log.i(TAG, "Calling vtp.processRefundRequest with linked transaction...")
+            vtp.processRefundRequest(refundRequest, object : RefundRequestListener {
+                override fun onRefundRequestCompleted(response: RefundResponse?) {
+                    Log.i(TAG, "onRefundRequestCompleted: response=$response")
+                    mainHandler.post {
+                        result.success(buildRefundResponseMap(response))
+                    }
+                }
+                
+                override fun onRefundRequestError(exception: Exception?) {
+                    Log.e(TAG, "onRefundRequestError: ${exception?.message}", exception)
+                    mainHandler.post {
+                        result.success(mapOf(
+                            "transactionStatus" to "error",
+                            "errorMessage" to (exception?.message ?: "Unknown error")
+                        ))
+                    }
+                }
+            }, null)
+        } catch (e: Exception) {
+            Log.e(TAG, "processLinkedRefund exception: ${e.message}", e)
+            result.error("LINKED_REFUND_ERROR", e.message, null)
         }
     }
 
@@ -673,12 +748,18 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             return mapOf("transactionStatus" to "error", "errorMessage" to "Null response")
         }
         
+        // Check if this is a stored (offline) transaction
+        val isStoredTransaction = response.transactionStatus?.name?.contains("Merchant", ignoreCase = true) == true
+        
         return mapOf(
             "transactionStatus" to response.transactionStatus?.name?.lowercase(),
             "approvedAmount" to response.approvedAmount?.toDouble(),
             "cashbackAmount" to response.cashbackAmount?.toDouble(),
             "tipAmount" to response.tipAmount?.toDouble(),
             "tpId" to getPropertySafe(response, "tpId"),
+            "referenceNumber" to getPropertySafe(response, "referenceNumber", "ReferenceNumber"),
+            "storedTransactionId" to getPropertySafe(response, "storedTransactionId", "StoredTransactionId", "safTransactionId"),
+            "isStoredTransaction" to isStoredTransaction,
             "host" to buildHostResponseMap(response.host),
             "card" to buildCardInfoMap(response),
             "emv" to buildEmvInfoMap(response),
@@ -743,6 +824,15 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 null
             }
         }
+    }
+
+    // Vararg version to try multiple property names
+    private fun getPropertySafe(obj: Any, vararg propertyNames: String): Any? {
+        for (name in propertyNames) {
+            val result = getPropertySafe(obj, name)
+            if (result != null) return result
+        }
+        return null
     }
 
     private fun buildHostResponseMap(host: Any?): Map<String, Any?>? {
