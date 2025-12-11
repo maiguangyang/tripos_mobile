@@ -1,634 +1,739 @@
 package com.example.tripos_mobile
 
-import android.Manifest
-import android.bluetooth.BluetoothAdapter
+import android.app.Activity
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import com.vantiv.triposmobilesdk.*
+import com.vantiv.triposmobilesdk.enums.*
+import com.vantiv.triposmobilesdk.requests.*
+import com.vantiv.triposmobilesdk.responses.*
 import java.math.BigDecimal
-import java.util.ArrayList
 
-// --- 核心 SDK 引用 ---
-import com.vantiv.triposmobilesdk.VTP
-import com.vantiv.triposmobilesdk.triPOSMobileSDK
-import com.vantiv.triposmobilesdk.Configuration
-import com.vantiv.triposmobilesdk.ApplicationConfiguration
-import com.vantiv.triposmobilesdk.HostConfiguration
-import com.vantiv.triposmobilesdk.DeviceConfiguration
-import com.vantiv.triposmobilesdk.TcpIpConfiguration
-// 移除 BluetoothConfiguration 引用，因为它导致报错
-// import com.vantiv.triposmobilesdk.BluetoothConfiguration 
-import com.vantiv.triposmobilesdk.TransactionConfiguration
-import com.vantiv.triposmobilesdk.StoreAndForwardConfiguration
-
-// --- 监听器 ---
-import com.vantiv.triposmobilesdk.DeviceConnectionListener
-import com.vantiv.triposmobilesdk.DeviceInteractionListener
-import com.vantiv.triposmobilesdk.SaleRequestListener
-
-// --- 枚举 ---
-import com.vantiv.triposmobilesdk.enums.DeviceType
-import com.vantiv.triposmobilesdk.enums.PaymentProcessor
-import com.vantiv.triposmobilesdk.enums.ApplicationMode
-import com.vantiv.triposmobilesdk.enums.MarketCode
-import com.vantiv.triposmobilesdk.enums.CurrencyCode
-import com.vantiv.triposmobilesdk.enums.TransactionStoringMode
-
-// --- 请求与响应 ---
-import com.vantiv.triposmobilesdk.requests.SaleRequest
-import com.vantiv.triposmobilesdk.responses.SaleResponse
-
-import com.vantiv.triposmobilesdk.BluetoothScanRequestListener
-
-class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler {
-    
+/** TriposMobilePlugin */
+class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     companion object {
-        private const val TAG = "TriPOSMobile"
+        private const val TAG = "TriposMobilePlugin"
     }
-    
-    private lateinit var channel: MethodChannel
-    private lateinit var eventChannel: EventChannel
-    private lateinit var context: Context
-    
-    private var sharedVtp: VTP? = null
-    private var eventSink: EventChannel.EventSink? = null
-    private val uiHandler = Handler(Looper.getMainLooper())
 
-    private var savedHostConfig: HostConfiguration? = null
-    private var savedAppConfig: ApplicationConfiguration? = null
-    private var savedStoreForwardConfig: StoreAndForwardConfiguration? = null
-    private var isProductionMode: Boolean = false
+    private lateinit var channel: MethodChannel
+    private lateinit var statusEventChannel: EventChannel
+    private lateinit var deviceEventChannel: EventChannel
+    
+    private var context: Context? = null
+    private var activity: Activity? = null
+    private var statusEventSink: EventChannel.EventSink? = null
+    private var deviceEventSink: EventChannel.EventSink? = null
+    
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val vtp: VTP get() = triPOSMobileSDK.getSharedVtp()
+    private var currentConfiguration: Configuration? = null
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+        context = flutterPluginBinding.applicationContext
+        
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "tripos_mobile")
         channel.setMethodCallHandler(this)
-        eventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "tripos_mobile/events")
-        eventChannel.setStreamHandler(this)
-        context = flutterPluginBinding.applicationContext
+        
+        statusEventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "tripos_mobile/status")
+        statusEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                statusEventSink = events
+            }
+            override fun onCancel(arguments: Any?) {
+                statusEventSink = null
+            }
+        })
+        
+        deviceEventChannel = EventChannel(flutterPluginBinding.binaryMessenger, "tripos_mobile/device")
+        deviceEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                deviceEventSink = events
+            }
+            override fun onCancel(arguments: Any?) {
+                deviceEventSink = null
+            }
+        })
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
             "getPlatformVersion" -> result.success("Android ${android.os.Build.VERSION.RELEASE}")
-            "initialize" -> {
-                val config = call.arguments as? Map<String, Any>
-                if (config != null) initializeSdk(config, result) else result.error("ARGS", "Config null", null)
-            }
-            "scanDevices" -> scanDevices(result)
-            "connectDevice" -> {
-                val device = call.arguments as? Map<String, Any>
-                if (device != null) connectDevice(device, result) else result.error("ARGS", "Device info null", null)
-            }
-            "processPayment" -> {
-                val request = call.arguments as? Map<String, Any>
-                if (request != null) processPayment(request, result) else result.error("ARGS", "Request null", null)
-            }
-            "cancelPayment" -> cancelPayment(result)
-            "disconnect" -> disconnectDevice(result)
+            "getSdkVersion" -> result.success(triPOSMobileSDK.getVersion())
+            "scanBluetoothDevices" -> scanBluetoothDevices(call, result)
+            "initialize" -> initialize(call, result)
+            "isInitialized" -> result.success(vtp.isInitialized)
+            "deinitialize" -> deinitialize(result)
+            "processSale" -> processSale(call, result)
+            "processRefund" -> processRefund(call, result)
+            "processVoid" -> processVoid(call, result)
+            "processAuthorization" -> processAuthorization(call, result)
+            "cancelTransaction" -> cancelTransaction(result)
+            "getDeviceInfo" -> getDeviceInfo(result)
             else -> result.notImplemented()
         }
     }
 
-    private fun initializeSdk(config: Map<String, Any>, result: Result) {
+    private fun scanBluetoothDevices(call: MethodCall, result: Result) {
+        val ctx = context ?: run {
+            result.error("NO_CONTEXT", "Context is not available", null)
+            return
+        }
+        
         try {
-            Log.d(TAG, "Initializing triPOS SDK...")
+            val configMap = call.arguments as? Map<*, *>
+            val config = buildConfiguration(configMap)
             
-            // Validate required parameters
-            val acceptorId = config["acceptorId"] as? String
-            val accountId = config["accountId"] as? String
-            val accountToken = config["accountToken"] as? String
-            
-            if (acceptorId.isNullOrEmpty() || accountId.isNullOrEmpty() || accountToken.isNullOrEmpty()) {
-                Log.e(TAG, "Missing required credentials")
-                result.error("INVALID_CONFIG", "Missing required credentials (acceptorId, accountId, or accountToken)", null)
-                return
-            }
-            
-            sharedVtp = triPOSMobileSDK.getSharedVtp()
-            isProductionMode = (config["isProduction"] as? Boolean) ?: false
-            Log.d(TAG, "Production mode: $isProductionMode")
-
-            savedHostConfig = HostConfiguration()
-            savedHostConfig?.apply {
-                setAcceptorId(acceptorId)
-                setAccountId(accountId)
-                setAccountToken(accountToken)
-                setApplicationId((config["applicationId"] as? String) ?: "12345")
-                setApplicationName((config["applicationName"] as? String) ?: "FlutterPlugin")
-                setApplicationVersion((config["applicationVersion"] as? String) ?: "1.0.0")
-                setPaymentProcessor(PaymentProcessor.Worldpay)
-            }
-            Log.d(TAG, "Host configuration created")
-
-            savedAppConfig = ApplicationConfiguration()
-            savedAppConfig?.apply {
-                setApplicationMode(if (isProductionMode) ApplicationMode.Production else ApplicationMode.TestCertification)
-                setMarketCode(MarketCode.Retail)
-            }
-            Log.d(TAG, "Application configuration created")
-
-            // 3. Store and Forward (Offline Payment) Configuration
-            val storeModeStr = config["storeMode"] as? String ?: "Auto"
-            val offlineLimit = (config["offlineAmountLimit"] as? Double) ?: 100.00
-            val retentionDays = (config["retentionDays"] as? Int) ?: 7
-            
-            savedStoreForwardConfig = StoreAndForwardConfiguration()
-            savedStoreForwardConfig?.apply {
-                try {
-                    transactionStoringMode = TransactionStoringMode.valueOf(storeModeStr)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Invalid storeMode: $storeModeStr, defaulting to Auto")
-                    transactionStoringMode = TransactionStoringMode.Auto
-                }
-                // Set amount limit using the correct method/property
-                try {
-                    // Try direct property assignment first
-                    val limitField = this.javaClass.getDeclaredField("transactionAmountLimit")
-                    limitField.isAccessible = true
-                    limitField.set(this, BigDecimal(offlineLimit))
-                } catch (e: Exception) {
-                    // Fallback: try setter method
-                    try {
-                        val method = this.javaClass.getMethod("setTransactionAmountLimit", BigDecimal::class.java)
-                        method.invoke(this, BigDecimal(offlineLimit))
-                    } catch (e2: Exception) {
-                        Log.w(TAG, "Could not set transaction amount limit: ${e2.message}")
+            vtp.scanBluetoothDevicesWithConfiguration(ctx, config, object : BluetoothScanRequestListener {
+                override fun onScanRequestCompleted(devices: ArrayList<String>?) {
+                    mainHandler.post {
+                        result.success(devices ?: emptyList<String>())
                     }
                 }
-                // Set retention days using reflection to find correct property name
-                try {
-                    val daysField = this.javaClass.getDeclaredField("expirationPeriod")
-                    daysField.isAccessible = true
-                    daysField.set(this, retentionDays)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not set expiration period: ${e.message}")
+                
+                override fun onScanRequestError(exception: Exception?) {
+                    mainHandler.post {
+                        result.error("SCAN_ERROR", exception?.message ?: "Unknown error", null)
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            result.error("SCAN_ERROR", e.message, null)
+        }
+    }
+
+    private fun initialize(call: MethodCall, result: Result) {
+        val ctx = context ?: run {
+            result.error("NO_CONTEXT", "Context is not available", null)
+            return
+        }
+        
+        try {
+            val configMap = call.arguments as? Map<*, *>
+            val config = buildConfiguration(configMap)
+            currentConfiguration = config
+            
+            val connectionListener = object : DeviceConnectionListener {
+                override fun onConnected(device: Device?, description: String?, model: String?, serialNumber: String?) {
+                    Log.i(TAG, "Device connected: $description, $model, $serialNumber")
+                    mainHandler.post {
+                        deviceEventSink?.success(mapOf(
+                            "event" to "connected",
+                            "description" to description,
+                            "model" to model,
+                            "serialNumber" to serialNumber
+                        ))
+                    }
+                }
+                
+                override fun onDisconnected(device: Device?) {
+                    Log.i(TAG, "Device disconnected")
+                    mainHandler.post {
+                        deviceEventSink?.success(mapOf("event" to "disconnected"))
+                    }
+                }
+                
+                override fun onError(exception: Exception?) {
+                    Log.e(TAG, "Device error: ${exception?.message}")
+                    mainHandler.post {
+                        deviceEventSink?.success(mapOf(
+                            "event" to "error",
+                            "message" to (exception?.message ?: "Unknown error")
+                        ))
+                    }
+                }
+                
+                override fun onBatteryLow() {
+                    Log.w(TAG, "Device battery low")
+                    mainHandler.post {
+                        deviceEventSink?.success(mapOf("event" to "batteryLow"))
+                    }
+                }
+                
+                override fun onWarning(exception: Exception?) {
+                    Log.w(TAG, "Device warning: ${exception?.message}")
+                    mainHandler.post {
+                        deviceEventSink?.success(mapOf(
+                            "event" to "warning",
+                            "message" to (exception?.message ?: "Unknown warning")
+                        ))
+                    }
+                }
+
+                override fun onConfirmPairing(
+                    ledSequence: MutableList<BTPairingLedSequence>?,
+                    deviceName: String?,
+                    confirmPairingListener: DeviceConnectionListener.ConfirmPairingListener?
+                ) {
+                    // Auto-confirm pairing for now
+                    confirmPairingListener?.confirmPairing()
                 }
             }
-            Log.d(TAG, "Store and Forward configured: Mode=$storeModeStr, Limit=$offlineLimit, Days=$retentionDays")
-
-            Log.i(TAG, "SDK initialized successfully")
-            result.success(true)
+            
+            Thread {
+                try {
+                    vtp.initialize(ctx, config, connectionListener, null)
+                    mainHandler.post {
+                        result.success(true)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Initialize error: ${e.message}")
+                    mainHandler.post {
+                        result.error("INIT_ERROR", e.message, null)
+                    }
+                }
+            }.start()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize SDK", e)
             result.error("INIT_ERROR", e.message, null)
         }
     }
 
-    private fun connectDevice(deviceMap: Map<String, Any>, result: Result) {
-        if (savedHostConfig == null || sharedVtp == null) {
-            result.error("NOT_INIT", "Please call initialize() first", null)
-            return
-        }
-
-        val identifier = deviceMap["identifier"] as? String ?: ""
-        val isIpConnection = (deviceMap["isIp"] as? Boolean) ?: false
-        
-        val devConfig = DeviceConfiguration()
-        
-        if (isIpConnection) {
-            devConfig.setDeviceType(DeviceType.IngenicoUppTcpIp)
-            val tcpConfig = TcpIpConfiguration()
-            tcpConfig.setIpAddress(identifier)
-            tcpConfig.setPort(12000)
-            devConfig.setTcpIpConfiguration(tcpConfig)
-        } else {
-            // Bluetooth connection
-            Log.d(TAG, "Configuring Bluetooth device: $identifier")
-            devConfig.setDeviceType(DeviceType.IngenicoRuaBluetooth)
-            
-            try {
-                // Set bluetooth identifier
-                devConfig.identifier = identifier
-                Log.d(TAG, "Bluetooth identifier set successfully")
-            } catch (e: Throwable) {
-                Log.e(TAG, "Failed to set bluetooth identifier, trying alternative method", e)
-                try {
-                    // Alternative: try setIdentifier method if property access fails
-                    val setIdentifierMethod = devConfig.javaClass.getMethod("setIdentifier", String::class.java)
-                    setIdentifierMethod.invoke(devConfig, identifier)
-                    Log.d(TAG, "Bluetooth identifier set via setter method")
-                } catch (e2: Exception) {
-                    Log.e(TAG, "Failed to set bluetooth identifier via all methods", e2)
-                    sendEvent("error", "Failed to configure bluetooth: ${e2.message}")
-                }
-            }
-        }
-        
-        val config = Configuration()
-        config.setHostConfiguration(savedHostConfig)
-        config.setDeviceConfiguration(devConfig)
-        if (savedAppConfig != null) {
-            config.setApplicationConfiguration(savedAppConfig)
-        }
-        
-        // Apply Store and Forward configuration for offline payments
-        if (savedStoreForwardConfig != null) {
-            config.storeAndForwardConfiguration = savedStoreForwardConfig
-            Log.d(TAG, "Store and Forward configuration applied")
-        }
-
-        Thread {
-            try {
-                Log.d(TAG, "Starting device connection...")
-                if (sharedVtp!!.isInitialized) {
-                    Log.d(TAG, "Deinitializing existing VTP instance")
-                    sharedVtp!!.deinitialize()
-                }
-                
-                Log.d(TAG, "Initializing VTP with device configuration")
-                sharedVtp!!.initialize(context, config, object : DeviceConnectionListener {
-                    override fun onConnected(device: com.vantiv.triposmobilesdk.Device?, desc: String?, model: String?, serial: String?) {
-                        Log.i(TAG, "Device connected: $model ($serial)")
-                        sendEvent("connected", "Connected to $model ($serial)")
-                        uiHandler.post { result.success(true) }
-                    }
-                    override fun onDisconnected(device: com.vantiv.triposmobilesdk.Device?) {
-                        Log.i(TAG, "Device disconnected")
-                        sendEvent("disconnected", "Device disconnected")
-                    }
-                    override fun onError(e: Exception?) {
-                        Log.e(TAG, "Connection error", e)
-                        sendEvent("error", "Connection Error: ${e?.message}")
-                    }
-                    override fun onBatteryLow() { sendEvent("message", "WARNING: Battery Low") }
-                    override fun onWarning(e: Exception?) { sendEvent("message", "Warning: ${e?.message}") }
-                    override fun onConfirmPairing(ledSequences: MutableList<com.vantiv.triposmobilesdk.BTPairingLedSequence>?, deviceName: String?, listener: DeviceConnectionListener.ConfirmPairingListener?) {
-                        sendEvent("message", "请在设备上确认配对")
-                        listener?.confirmPairing()
-                    }
-                })
-            } catch (e: Exception) {
-                Log.e(TAG, "Device connection failed", e)
-                uiHandler.post { result.error("CONNECT_ERROR", e.message, null) }
-            }
-        }.start()
-    }
-
-    private fun processPayment(request: Map<String, Any>, result: Result) {
-        if (sharedVtp == null || !sharedVtp!!.isInitialized) {
-            Log.e(TAG, "Cannot process payment: SDK not initialized")
-            result.error("SDK_ERROR", "SDK not initialized", null)
-            return
-        }
-
-        val amount = (request["amount"] as? Double) ?: 0.0
-        Log.d(TAG, "Processing payment for amount: $amount")
-        
-        // 根据官方 Worldpay 示例配置 SaleRequest
-        val saleRequest = SaleRequest()
-        
-        // 交易金额
-        saleRequest.setTransactionAmount(BigDecimal(amount))
-        
-        // 关键修复：设置持卡人在场状态（必须字段，防止空指针异常）
-        // 注意方法名是 setCardholderPresentCode (小写 h)
-        saleRequest.setCardholderPresentCode(com.vantiv.triposmobilesdk.enums.CardHolderPresentCode.Present)
-        
-        // 从 Dart 层读取可选字段，如果未提供则使用默认值
-        val laneNumber = (request["laneNumber"] as? String) ?: "1"
-        val referenceNumber = (request["referenceNumber"] as? String) ?: "REF_${System.currentTimeMillis()}"
-        val clerkNumber = (request["clerkNumber"] as? String) ?: "001"
-        val shiftID = (request["shiftID"] as? String) ?: "1"
-        
-        // 设置交易元数据（官方推荐字段）
-        saleRequest.setLaneNumber(laneNumber)              // 收银通道号
-        saleRequest.setReferenceNumber(referenceNumber)    // 参考号（唯一标识）
-        saleRequest.setClerkNumber(clerkNumber)            // 收银员编号
-        saleRequest.setShiftID(shiftID)                    // 班次ID
-        
-        Log.d(TAG, "SaleRequest configured: lane=$laneNumber, ref=$referenceNumber, clerk=$clerkNumber, shift=$shiftID")
-
+    private fun deinitialize(result: Result) {
         try {
-            // 关键修复：设置 StatusListener（参考官方示例 SaleFragment.java）
-            // 这个 listener 接收 VtpStatus 更新，确保读卡器正确激活
-            sharedVtp!!.setStatusListener { status ->
-                Log.d(TAG, "VtpStatus: ${status.name}")
-                // 发送状态事件到 Flutter
-                sendEvent("message", "Status: ${status.name}")
-            }
-            
-            sharedVtp!!.processSaleRequest(saleRequest, object : SaleRequestListener {
-                override fun onSaleRequestCompleted(saleResponse: SaleResponse) {
-                    Log.i(TAG, "Sale request completed")
-                    uiHandler.post {
-                        try {
-                            val responseMap = mutableMapOf<String, Any?>()
-                            
-                            // Use reflection to get all available fields since we don't know exact names
-                            Log.d(TAG, "Inspecting SaleResponse class...")
-                            
-                            // List all methods for debugging
-                            val methods = saleResponse.javaClass.methods
-                            Log.d(TAG, "Available methods in SaleResponse:")
-                            methods.forEach { method ->
-                                if (method.name.startsWith("get") || method.name.startsWith("is")) {
-                                    Log.d(TAG, "  - ${method.name}()")
-                                }
-                            }
-                            
-                            // Try common field name patterns (including offline payment fields)
-                            val possibleFields = mapOf(
-                                "isApproved" to listOf("getIsApproved", "isApproved", "getApproved"),
-                                "authCode" to listOf("getAuthorizationCode", "getAuthCode", "getApprovalCode"),
-                                "transactionId" to listOf("getTransactionId", "getTransactionID", "getTxnId"),
-                                "message" to listOf("getResponseMessage", "getMessage", "getStatusMessage"),
-                                "amount" to listOf("getAuthorizedAmount", "getAmount", "getTransactionAmount"),
-                                "isStored" to listOf("isStored", "getIsStored", "getStored")
-                            )
-                            
-                            possibleFields.forEach { (fieldName, methodNames) ->
-                                var found = false
-                                for (methodName in methodNames) {
-                                    try {
-                                        val method = saleResponse.javaClass.getMethod(methodName)
-                                        val value = method.invoke(saleResponse)
-                                        responseMap[fieldName] = value?.toString() ?: ""
-                                        Log.d(TAG, "Found $fieldName via $methodName: $value")
-                                        found = true
-                                        break
-                                    } catch (e: Exception) {
-                                        // Method doesn't exist, try next one
-                                    }
-                                }
-                                if (!found) {
-                                    responseMap[fieldName] = ""
-                                    Log.w(TAG, "Could not find field: $fieldName")
-                                }
-                            }
-                            
-                            // Special handling for offline transactions
-                            val isStored = (responseMap["isStored"] as? String)?.toBoolean() == true
-                            if (isStored) {
-                                Log.i(TAG, "Transaction stored offline - will be forwarded when connection available")
-                                responseMap["isOffline"] = true
-                            } else {
-                                responseMap["isOffline"] = false
-                            }
-                            
-                            // Always include raw response for debugging
-                            responseMap["rawResponse"] = saleResponse.toString()
-                            
-                            Log.d(TAG, "Payment response: $responseMap")
-                            result.success(responseMap)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error parsing sale response", e)
-                            result.error("PARSE_ERROR", "Failed to parse response: ${e.message}", null)
+            if (vtp.isInitialized) {
+                Thread {
+                    try {
+                        vtp.deinitialize()
+                        currentConfiguration = null
+                        mainHandler.post {
+                            result.success(null)
+                        }
+                    } catch (e: Exception) {
+                        mainHandler.post {
+                            result.error("DEINIT_ERROR", e.message, null)
                         }
                     }
-                }
-
-                override fun onSaleRequestError(e: Exception) {
-                    Log.e(TAG, "Sale request error", e)
-                    uiHandler.post { result.error("SALE_ERROR", e.message, null) }
-                }
-            },
-            // 第二个参数：DeviceInteractionListener（基于官方示例实现）
-            object : DeviceInteractionListener {
-                // 1. 金额确认 - 自动确认
-                override fun onAmountConfirmation(
-                    amountConfirmationType: com.vantiv.triposmobilesdk.enums.AmountConfirmationType?,
-                    amount: java.math.BigDecimal?,
-                    callback: DeviceInteractionListener.ConfirmAmountListener?
-                ) {
-                    Log.d(TAG, "Auto-confirming amount: $amount (type: $amountConfirmationType)")
-                    callback?.confirmAmount(true)
-                }
-                
-                // 2. 选择列表 - 自动选择第一个
-                override fun onChoiceSelections(
-                    choices: Array<out String>?,
-                    selectionType: com.vantiv.triposmobilesdk.enums.SelectionType?,
-                    callback: DeviceInteractionListener.SelectChoiceListener?
-                ) {
-                    Log.d(TAG, "Auto-selecting first choice (type: $selectionType)")
-                    callback?.selectChoice(0)
-                }
-                
-                // 3. 数字输入 - 自动输入 0（如小费）
-                override fun onNumericInput(
-                    numericInputType: com.vantiv.triposmobilesdk.enums.NumericInputType?,
-                    callback: DeviceInteractionListener.NumericInputListener?
-                ) {
-                    Log.d(TAG, "Auto-entering 0 for numeric input (type: $numericInputType)")
-                    callback?.enterNumericInput("0.0")
-                }
-                
-                // 4. 选择应用 - 自动选择第一个
-                override fun onSelectApplication(
-                    applications: Array<out String>?,
-                    callback: DeviceInteractionListener.SelectChoiceListener?
-                ) {
-                    Log.d(TAG, "Auto-selecting first application")
-                    callback?.selectChoice(0)
-                }
-                
-                // 5. 提示刷卡
-                override fun onPromptUserForCard(
-                    prompt: String?,
-                    displayTextIdentifiers: com.vantiv.triposmobilesdk.enums.DisplayTextIdentifiers?
-                ) {
-                    Log.d(TAG, "Prompt: $prompt")
-                    sendEvent("message", prompt ?: "Please insert/swipe/tap card")
-                }
-                
-                // 6. 显示文本
-                override fun onDisplayText(
-                    text: String?,
-                    displayTextIdentifiers: com.vantiv.triposmobilesdk.enums.DisplayTextIdentifiers?
-                ) {
-                    Log.d(TAG, "Display: $text")
-                    sendEvent("message", text ?: "")
-                }
-                
-                // 7. 移除卡
-                override fun onRemoveCard() {
-                    Log.d(TAG, "Remove card")
-                    sendEvent("message", "Please remove card")
-                }
-                
-                // 8. 卡已移除
-                override fun onCardRemoved() {
-                    Log.d(TAG, "Card removed")
-                    sendEvent("message", "Card removed")
-                }
-                
-                // 9. 等待提示
-                override fun onWait(message: String?) {
-                    Log.d(TAG, "Wait: $message")
-                    sendEvent("message", message ?: "Please wait...")
-                }
+                }.start()
+            } else {
+                result.success(null)
             }
-            )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to process sale request", e)
-            result.error("SALE_EXCEPTION", e.message, null)
-        }
-    }
-    
-    private fun disconnectDevice(result: Result) {
-        try { 
-            sharedVtp?.deinitialize()
-            result.success(true) 
-        } catch (e: Exception) { 
-            result.error("ERR", e.message, null) 
+            result.error("DEINIT_ERROR", e.message, null)
         }
     }
 
-    private fun cancelPayment(result: Result) {
+    private fun processSale(call: MethodCall, result: Result) {
+        if (!vtp.isInitialized) {
+            result.error("NOT_INITIALIZED", "SDK is not initialized", null)
+            return
+        }
+        
         try {
-            val method = sharedVtp?.javaClass?.getMethod("cancelCurrentTransaction")
-            method?.invoke(sharedVtp)
-            result.success(true)
+            val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+            val saleRequest = buildSaleRequest(requestMap)
+            
+            setupStatusListener()
+            
+            vtp.processSaleRequest(saleRequest, object : SaleRequestListener {
+                override fun onSaleRequestCompleted(response: SaleResponse?) {
+                    mainHandler.post {
+                        result.success(buildSaleResponseMap(response))
+                    }
+                }
+                
+                override fun onSaleRequestError(exception: Exception?) {
+                    mainHandler.post {
+                        result.success(mapOf(
+                            "transactionStatus" to "error",
+                            "errorMessage" to (exception?.message ?: "Unknown error")
+                        ))
+                    }
+                }
+            }, null)
+        } catch (e: Exception) {
+            result.error("SALE_ERROR", e.message, null)
+        }
+    }
+
+    private fun processRefund(call: MethodCall, result: Result) {
+        if (!vtp.isInitialized) {
+            result.error("NOT_INITIALIZED", "SDK is not initialized", null)
+            return
+        }
+        
+        try {
+            val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+            val refundRequest = buildRefundRequest(requestMap)
+            
+            setupStatusListener()
+            
+            vtp.processRefundRequest(refundRequest, object : RefundRequestListener {
+                override fun onRefundRequestCompleted(response: RefundResponse?) {
+                    mainHandler.post {
+                        result.success(buildRefundResponseMap(response))
+                    }
+                }
+                
+                override fun onRefundRequestError(exception: Exception?) {
+                    mainHandler.post {
+                        result.success(mapOf(
+                            "transactionStatus" to "error",
+                            "errorMessage" to (exception?.message ?: "Unknown error")
+                        ))
+                    }
+                }
+            }, null)
+        } catch (e: Exception) {
+            result.error("REFUND_ERROR", e.message, null)
+        }
+    }
+
+    private fun processVoid(call: MethodCall, result: Result) {
+        if (!vtp.isInitialized) {
+            result.error("NOT_INITIALIZED", "SDK is not initialized", null)
+            return
+        }
+        
+        try {
+            val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+            val voidRequest = buildVoidRequest(requestMap)
+            
+            vtp.processVoidRequest(voidRequest, object : VoidRequestListener {
+                override fun onVoidRequestCompleted(response: VoidResponse?) {
+                    mainHandler.post {
+                        result.success(buildVoidResponseMap(response))
+                    }
+                }
+                
+                override fun onVoidRequestError(exception: Exception?) {
+                    mainHandler.post {
+                        result.success(mapOf(
+                            "transactionStatus" to "error",
+                            "errorMessage" to (exception?.message ?: "Unknown error")
+                        ))
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            result.error("VOID_ERROR", e.message, null)
+        }
+    }
+
+    private fun processAuthorization(call: MethodCall, result: Result) {
+        if (!vtp.isInitialized) {
+            result.error("NOT_INITIALIZED", "SDK is not initialized", null)
+            return
+        }
+        
+        try {
+            val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+            val authRequest = buildAuthorizationRequest(requestMap)
+            
+            setupStatusListener()
+            
+            vtp.processAuthorizationRequest(authRequest, object : AuthorizationRequestListener {
+                override fun onAuthorizationRequestCompleted(response: AuthorizationResponse?) {
+                    mainHandler.post {
+                        result.success(buildAuthorizationResponseMap(response))
+                    }
+                }
+                
+                override fun onAuthorizationRequestError(exception: Exception?) {
+                    mainHandler.post {
+                        result.success(mapOf(
+                            "transactionStatus" to "error",
+                            "errorMessage" to (exception?.message ?: "Unknown error")
+                        ))
+                    }
+                }
+            }, null)
+        } catch (e: Exception) {
+            result.error("AUTH_ERROR", e.message, null)
+        }
+    }
+
+    private fun cancelTransaction(result: Result) {
+        try {
+            vtp.cancelCurrentFlow()
+            result.success(null)
         } catch (e: Exception) {
             result.error("CANCEL_ERROR", e.message, null)
         }
     }
 
-    private fun scanDevices(result: Result) {
-        // 1. 权限检查 (Android 12+ 需要 BLUETOOTH_SCAN)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val hasScan = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
-            val hasConnect = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-            
-            if (!hasScan || !hasConnect) {
-                result.error("PERMISSION_DENIED", "Need BLUETOOTH_SCAN and CONNECT permissions", null)
-                return
+    private fun getDeviceInfo(result: Result) {
+        try {
+            val device = vtp.device
+            if (device != null) {
+                result.success(mapOf(
+                    "description" to device.toString(),
+                    "model" to (device.javaClass.simpleName ?: "Unknown"),
+                    "serialNumber" to "",
+                    "firmwareVersion" to ""
+                ))
+            } else {
+                result.success(null)
             }
-        } else {
-            // Android 11 及以下需要定位权限才能扫描蓝牙
-            val hasLoc = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-            if (!hasLoc) {
-                result.error("PERMISSION_DENIED", "Need ACCESS_FINE_LOCATION permission", null)
-                return
-            }
+        } catch (e: Exception) {
+            result.error("DEVICE_INFO_ERROR", e.message, null)
         }
+    }
 
-        // 2. 检查蓝牙适配器状态
-        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-        if (bluetoothAdapter?.isEnabled != true) {
-            result.error("BT_OFF", "Bluetooth is not enabled", null)
-            return
-        }
-
-        // 3. 检查 SDK 是否初始化
-        if (sharedVtp == null) {
-            // 如果还没初始化，尝试先获取单例
-            try {
-                sharedVtp = triPOSMobileSDK.getSharedVtp()
-            } catch (e: Exception) {
-                result.error("SDK_ERROR", "SDK not initialized", null)
-                return
+    private fun setupStatusListener() {
+        vtp.setStatusListener { status: VtpStatus ->
+            mainHandler.post {
+                statusEventSink?.success(status.name)
             }
         }
+    }
 
-        // 4. 准备配置 (扫描需要传入完整的 Config，包括设备类型)
+    // Configuration builders
+    private fun buildConfiguration(configMap: Map<*, *>?): Configuration {
         val config = Configuration()
-        if (savedHostConfig != null) {
-            config.hostConfiguration = savedHostConfig
-        }
-        if (savedAppConfig != null) {
-            config.applicationConfiguration = savedAppConfig
+        
+        if (configMap != null) {
+            // Application Configuration
+            val appConfigMap = configMap["applicationConfiguration"] as? Map<*, *>
+            val appConfig = ApplicationConfiguration()
+            appConfig.idlePrompt = appConfigMap?.get("idlePrompt") as? String ?: "triPOS Flutter"
+            val modeStr = appConfigMap?.get("applicationMode") as? String
+            appConfig.applicationMode = if (modeStr == "production") {
+                ApplicationMode.Production
+            } else {
+                ApplicationMode.TestCertification
+            }
+            config.applicationConfiguration = appConfig
+            
+            // Host Configuration
+            val hostConfigMap = configMap["hostConfiguration"] as? Map<*, *>
+            val hostConfig = HostConfiguration()
+            hostConfig.acceptorId = hostConfigMap?.get("acceptorId") as? String ?: ""
+            hostConfig.accountId = hostConfigMap?.get("accountId") as? String ?: ""
+            hostConfig.accountToken = hostConfigMap?.get("accountToken") as? String ?: ""
+            hostConfig.applicationId = hostConfigMap?.get("applicationId") as? String ?: "8414"
+            hostConfig.applicationName = hostConfigMap?.get("applicationName") as? String ?: "triPOS Flutter"
+            hostConfig.applicationVersion = hostConfigMap?.get("applicationVersion") as? String ?: "1.0.0"
+            hostConfig.setPaymentProcessor(PaymentProcessor.Worldpay)
+            hostConfig.storeCardId = hostConfigMap?.get("storeCardId") as? String
+            hostConfig.storeCardPassword = hostConfigMap?.get("storeCardPassword") as? String
+            hostConfig.vaultId = hostConfigMap?.get("vaultId") as? String
+            config.hostConfiguration = hostConfig
+            
+            // Device Configuration
+            val deviceConfigMap = configMap["deviceConfiguration"] as? Map<*, *>
+            val deviceConfig = DeviceConfiguration()
+            val deviceTypeStr = deviceConfigMap?.get("deviceType") as? String
+            deviceConfig.deviceType = parseDeviceType(deviceTypeStr)
+            deviceConfig.terminalId = deviceConfigMap?.get("terminalId") as? String ?: "1234"
+            deviceConfig.terminalType = TerminalType.Mobile
+            deviceConfig.identifier = deviceConfigMap?.get("identifier") as? String
+            deviceConfig.isContactlessAllowed = deviceConfigMap?.get("contactlessAllowed") as? Boolean ?: true
+            deviceConfig.isKeyedEntryAllowed = deviceConfigMap?.get("keyedEntryAllowed") as? Boolean ?: true
+            deviceConfig.isHeartbeatEnabled = deviceConfigMap?.get("heartbeatEnabled") as? Boolean ?: true
+            deviceConfig.isBarcodeReaderEnabled = deviceConfigMap?.get("barcodeReaderEnabled") as? Boolean ?: true
+            val sleepTimeout = deviceConfigMap?.get("sleepTimeoutSeconds") as? Number ?: 300
+            deviceConfig.sleepTimeoutSeconds = BigDecimal(sleepTimeout.toInt())
+            config.deviceConfiguration = deviceConfig
+            
+            // Transaction Configuration
+            val txnConfigMap = configMap["transactionConfiguration"] as? Map<*, *>
+            val txnConfig = TransactionConfiguration()
+            txnConfig.isEmvAllowed = txnConfigMap?.get("emvAllowed") as? Boolean ?: true
+            txnConfig.isTipAllowed = txnConfigMap?.get("tipAllowed") as? Boolean ?: true
+            txnConfig.isTipEntryAllowed = txnConfigMap?.get("tipEntryAllowed") as? Boolean ?: true
+            txnConfig.isDebitAllowed = txnConfigMap?.get("debitAllowed") as? Boolean ?: true
+            txnConfig.isCashbackAllowed = txnConfigMap?.get("cashbackAllowed") as? Boolean ?: true
+            txnConfig.isCashbackEntryAllowed = txnConfigMap?.get("cashbackEntryAllowed") as? Boolean ?: true
+            txnConfig.isGiftCardAllowed = txnConfigMap?.get("giftCardAllowed") as? Boolean ?: true
+            txnConfig.isQuickChipAllowed = txnConfigMap?.get("quickChipAllowed") as? Boolean ?: true
+            txnConfig.isAmountConfirmationEnabled = txnConfigMap?.get("amountConfirmationEnabled") as? Boolean ?: true
+            txnConfig.setDuplicateTransactionsAllowed(txnConfigMap?.get("duplicateTransactionsAllowed") as? Boolean ?: true)
+            txnConfig.isPartialApprovalAllowed = txnConfigMap?.get("partialApprovalAllowed") as? Boolean ?: false
+            txnConfig.currencyCode = CurrencyCode.USD
+            txnConfig.addressVerificationCondition = AddressVerificationCondition.Keyed
+            config.transactionConfiguration = txnConfig
+            
+            // Store and Forward Configuration
+            val safConfigMap = configMap["storeAndForwardConfiguration"] as? Map<*, *>
+            val safConfig = StoreAndForwardConfiguration()
+            safConfig.numberOfDaysToRetainProcessedTransactions = 
+                (safConfigMap?.get("numberOfDaysToRetainProcessedTransactions") as? Number)?.toInt() ?: 1
+            safConfig.setShouldTransactionsBeAutomaticallyForwarded(
+                safConfigMap?.get("shouldTransactionsBeAutomaticallyForwarded") as? Boolean ?: false)
+            safConfig.isStoringTransactionsAllowed = 
+                safConfigMap?.get("storingTransactionsAllowed") as? Boolean ?: true
+            safConfig.transactionAmountLimit = 
+                (safConfigMap?.get("transactionAmountLimit") as? Number)?.toInt() ?: 50
+            safConfig.unprocessedTotalAmountLimit = 
+                (safConfigMap?.get("unprocessedTotalAmountLimit") as? Number)?.toInt() ?: 100
+            config.storeAndForwardConfiguration = safConfig
         }
         
-        // 关键：必须指定要扫描的设备类型，否则会报 "device type : Null" 错误
-        val deviceConfig = DeviceConfiguration()
-        deviceConfig.setDeviceType(DeviceType.IngenicoRuaBluetooth) // Moby 5500 使用蓝牙
-        config.setDeviceConfiguration(deviceConfig)
+        return config
+    }
 
-        Log.d(TAG, "Starting SDK Bluetooth Scan...")
+    private fun parseDeviceType(deviceTypeStr: String?): DeviceType {
+        if (deviceTypeStr.isNullOrEmpty()) {
+            return DeviceType.Null
+        }
+        
+        // Try to find the DeviceType by name using reflection
+        return try {
+            DeviceType.values().find { 
+                it.name.equals(deviceTypeStr, ignoreCase = true) ||
+                it.name.replace("_", "").equals(deviceTypeStr.replace("_", ""), ignoreCase = true)
+            } ?: DeviceType.Null
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not parse device type: $deviceTypeStr, using Null")
+            DeviceType.Null
+        }
+    }
 
-        // 5. 在后台线程调用 SDK 扫描方法（避免阻塞主线程）
-        Thread {
+    // Request builders
+    private fun buildSaleRequest(requestMap: Map<*, *>): SaleRequest {
+        val request = SaleRequest()
+        request.transactionAmount = BigDecimal((requestMap["transactionAmount"] as? Number)?.toDouble() ?: 0.0)
+        request.laneNumber = requestMap["laneNumber"] as? String ?: "1"
+        request.referenceNumber = requestMap["referenceNumber"] as? String ?: ""
+        request.clerkNumber = requestMap["clerkNumber"] as? String
+        request.shiftID = requestMap["shiftId"] as? String
+        request.ticketNumber = requestMap["ticketNumber"] as? String
+        request.cardholderPresentCode = CardHolderPresentCode.Present
+        
+        // Use reflection for optional setters that may not exist
+        try {
+            request.javaClass.getMethod("setKeyedOnly", Boolean::class.javaPrimitiveType)
+                .invoke(request, requestMap["keyedOnly"] as? Boolean ?: false)
+        } catch (e: Exception) { /* Method not available */ }
+        
+        (requestMap["convenienceFeeAmount"] as? Number)?.let {
+            request.convenienceFeeAmount = BigDecimal(it.toDouble())
+        }
+        (requestMap["salesTaxAmount"] as? Number)?.let {
+            request.salesTaxAmount = BigDecimal(it.toDouble())
+        }
+        (requestMap["tipAmount"] as? Number)?.let {
+            request.tipAmount = BigDecimal(it.toDouble())
+        }
+        (requestMap["surchargeFeeAmount"] as? Number)?.let {
+            request.surchargeFeeAmount = BigDecimal(it.toDouble())
+        }
+        
+        return request
+    }
+
+    private fun buildRefundRequest(requestMap: Map<*, *>): RefundRequest {
+        val request = RefundRequest()
+        request.transactionAmount = BigDecimal((requestMap["transactionAmount"] as? Number)?.toDouble() ?: 0.0)
+        request.laneNumber = requestMap["laneNumber"] as? String ?: "1"
+        request.referenceNumber = requestMap["referenceNumber"] as? String ?: ""
+        request.clerkNumber = requestMap["clerkNumber"] as? String
+        request.shiftID = requestMap["shiftId"] as? String
+        request.ticketNumber = requestMap["ticketNumber"] as? String
+        request.cardholderPresentCode = CardHolderPresentCode.Present
+        
+        (requestMap["convenienceFeeAmount"] as? Number)?.let {
+            request.convenienceFeeAmount = BigDecimal(it.toDouble())
+        }
+        (requestMap["salesTaxAmount"] as? Number)?.let {
+            request.salesTaxAmount = BigDecimal(it.toDouble())
+        }
+        
+        return request
+    }
+
+    private fun buildVoidRequest(requestMap: Map<*, *>): VoidRequest {
+        val request = VoidRequest()
+        request.transactionID = requestMap["transactionId"] as? String ?: ""
+        request.transactionAmount = BigDecimal((requestMap["transactionAmount"] as? Number)?.toDouble() ?: 0.0)
+        request.laneNumber = requestMap["laneNumber"] as? String ?: "1"
+        request.referenceNumber = requestMap["referenceNumber"] as? String ?: ""
+        request.clerkNumber = requestMap["clerkNumber"] as? String
+        request.shiftID = requestMap["shiftId"] as? String
+        request.ticketNumber = requestMap["ticketNumber"] as? String
+        request.cardholderPresentCode = CardHolderPresentCode.Present
+        request.marketCode = MarketCode.Retail
+        
+        return request
+    }
+
+    private fun buildAuthorizationRequest(requestMap: Map<*, *>): AuthorizationRequest {
+        val request = AuthorizationRequest()
+        request.transactionAmount = BigDecimal((requestMap["transactionAmount"] as? Number)?.toDouble() ?: 0.0)
+        request.laneNumber = requestMap["laneNumber"] as? String ?: "1"
+        request.referenceNumber = requestMap["referenceNumber"] as? String ?: ""
+        request.clerkNumber = requestMap["clerkNumber"] as? String
+        request.shiftID = requestMap["shiftId"] as? String
+        request.ticketNumber = requestMap["ticketNumber"] as? String
+        request.cardholderPresentCode = CardHolderPresentCode.Present
+        
+        // Use reflection for optional setters
+        try {
+            request.javaClass.getMethod("setKeyedOnly", Boolean::class.javaPrimitiveType)
+                .invoke(request, requestMap["keyedOnly"] as? Boolean ?: false)
+        } catch (e: Exception) { /* Method not available */ }
+        
+        (requestMap["convenienceFeeAmount"] as? Number)?.let {
+            request.convenienceFeeAmount = BigDecimal(it.toDouble())
+        }
+        (requestMap["salesTaxAmount"] as? Number)?.let {
+            request.salesTaxAmount = BigDecimal(it.toDouble())
+        }
+        
+        return request
+    }
+
+    // Response builders - using reflection for safe access
+    private fun buildSaleResponseMap(response: SaleResponse?): Map<String, Any?> {
+        if (response == null) {
+            return mapOf("transactionStatus" to "error", "errorMessage" to "Null response")
+        }
+        
+        return mapOf(
+            "transactionStatus" to response.transactionStatus?.name?.lowercase(),
+            "approvedAmount" to response.approvedAmount?.toDouble(),
+            "cashbackAmount" to response.cashbackAmount?.toDouble(),
+            "tipAmount" to response.tipAmount?.toDouble(),
+            "tpId" to getPropertySafe(response, "tpId"),
+            "host" to buildHostResponseMap(response.host),
+            "card" to buildCardInfoMap(response),
+            "emv" to buildEmvInfoMap(response),
+            "signatureData" to getPropertySafe(response, "signatureData")
+        )
+    }
+
+    private fun buildRefundResponseMap(response: RefundResponse?): Map<String, Any?> {
+        if (response == null) {
+            return mapOf("transactionStatus" to "error", "errorMessage" to "Null response")
+        }
+        
+        return mapOf(
+            "transactionStatus" to response.transactionStatus?.name?.lowercase(),
+            "approvedAmount" to response.approvedAmount?.toDouble(),
+            "tpId" to getPropertySafe(response, "tpId"),
+            "host" to buildHostResponseMap(response.host),
+            "card" to buildCardInfoMap(response),
+            "emv" to buildEmvInfoMap(response)
+        )
+    }
+
+    private fun buildVoidResponseMap(response: VoidResponse?): Map<String, Any?> {
+        if (response == null) {
+            return mapOf("transactionStatus" to "error", "errorMessage" to "Null response")
+        }
+        
+        return mapOf(
+            "transactionStatus" to response.transactionStatus?.name?.lowercase(),
+            "approvedAmount" to response.approvedAmount?.toDouble(),
+            "tpId" to getPropertySafe(response, "tpId"),
+            "host" to buildHostResponseMap(response.host)
+        )
+    }
+
+    private fun buildAuthorizationResponseMap(response: AuthorizationResponse?): Map<String, Any?> {
+        if (response == null) {
+            return mapOf("transactionStatus" to "error", "errorMessage" to "Null response")
+        }
+        
+        return mapOf(
+            "transactionStatus" to response.transactionStatus?.name?.lowercase(),
+            "approvedAmount" to response.approvedAmount?.toDouble(),
+            "tpId" to getPropertySafe(response, "tpId"),
+            "host" to buildHostResponseMap(response.host),
+            "card" to buildCardInfoMap(response),
+            "emv" to buildEmvInfoMap(response)
+        )
+    }
+
+    private fun getPropertySafe(obj: Any, propertyName: String): Any? {
+        return try {
+            val getterName = "get${propertyName.replaceFirstChar { it.uppercase() }}"
+            obj.javaClass.getMethod(getterName).invoke(obj)
+        } catch (e: Exception) {
             try {
-                sharedVtp!!.scanBluetoothDevicesWithConfiguration(context, config, object : BluetoothScanRequestListener {
-                    
-                    // 扫描成功回调
-                    override fun onScanRequestCompleted(devices: ArrayList<String>?) {
-                        val devicesList = ArrayList<Map<String, String>>()
-                        
-                        // 支付设备名称关键词列表（用于过滤非支付设备）
-                        val paymentDeviceKeywords = listOf(
-                            "mob", "ingenico", "icmp", "lane", "tablet", 
-                            "vantiv", "worldpay", "tripos", "rba", "rua"
-                        )
-                        
-                        devices?.forEach { deviceString ->
-                            // triPOS 返回的通常是 "设备名 (MAC地址)" 格式
-                            // 使用正则解析设备名称和 MAC 地址
-                            val regex = Regex("(.+?)\\s*\\(([0-9A-Fa-f:]+)\\)")
-                            val match = regex.find(deviceString)
-                            
-                            var name = ""
-                            var mac = ""
-                            
-                            if (match != null) {
-                                // 成功解析出名称和 MAC
-                                name = match.groupValues[1].trim()
-                                mac = match.groupValues[2].trim()
-                            } else {
-                                // 如果无法解析，可能直接是 MAC 地址或其他格式
-                                name = deviceString
-                                mac = deviceString
-                            }
-                            
-                            // 过滤：只保留支付设备
-                            val isPaymentDevice = paymentDeviceKeywords.any { keyword ->
-                                name.lowercase().contains(keyword)
-                            }
-                            
-                            if (isPaymentDevice) {
-                                devicesList.add(mapOf(
-                                    "name" to name,
-                                    "identifier" to mac
-                                ))
-                                Log.d(TAG, "✓ Payment device found: $name ($mac)")
-                            } else {
-                                Log.d(TAG, "✗ Filtered out non-payment device: $name")
-                            }
-                        }
-                        
-                        uiHandler.post { 
-                            Log.i(TAG, "Scan completed, found ${devicesList.size} payment devices (filtered from ${devices?.size ?: 0} total)")
-                            result.success(devicesList) 
-                        }
-                    }
-
-                    // 扫描失败回调
-                    override fun onScanRequestError(e: Exception?) {
-                        uiHandler.post {
-                            Log.e(TAG, "Scan failed", e)
-                            result.error("SCAN_ERROR", e?.message ?: "Unknown scan error", null)
-                        }
-                    }
-                })
-            } catch (e: Exception) {
-                uiHandler.post {
-                    Log.e(TAG, "Scan exception", e)
-                    result.error("SCAN_EXCEPTION", e.message, null)
-                }
+                // Try direct field access
+                val field = obj.javaClass.getDeclaredField(propertyName)
+                field.isAccessible = true
+                field.get(obj)
+            } catch (e2: Exception) {
+                null
             }
-        }.start()
+        }
     }
 
-    private fun sendEvent(type: String, msg: String?) {
-        uiHandler.post { eventSink?.success(mapOf("type" to type, "message" to msg)) }
+    private fun buildHostResponseMap(host: Any?): Map<String, Any?>? {
+        if (host == null) return null
+        
+        return try {
+            val hostClass = host.javaClass
+            mapOf(
+                "transactionId" to hostClass.getMethod("getTransactionID").invoke(host) as? String,
+                "authCode" to hostClass.getMethod("getAuthorizationCode").invoke(host) as? String,
+                "responseCode" to hostClass.getMethod("getResponseCode").invoke(host) as? String,
+                "responseMessage" to hostClass.getMethod("getResponseMessage").invoke(host) as? String
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error building host response map: ${e.message}")
+            null
+        }
     }
 
-    override fun onListen(args: Any?, events: EventChannel.EventSink?) { eventSink = events }
-    override fun onCancel(args: Any?) { eventSink = null }
+    private fun buildCardInfoMap(response: Any?): Map<String, Any?>? {
+        if (response == null) return null
+        
+        return try {
+            val responseClass = response.javaClass
+            mapOf(
+                "maskedCardNumber" to (responseClass.getMethod("getMaskedAccountNumber").invoke(response) as? String),
+                "cardBrand" to (responseClass.getMethod("getCardLogo").invoke(response)?.toString()),
+                "entryMode" to (responseClass.getMethod("getEntryMode").invoke(response)?.toString()?.lowercase())
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error building card info map: ${e.message}")
+            null
+        }
+    }
+
+    private fun buildEmvInfoMap(response: Any?): Map<String, Any?>? {
+        if (response == null) return null
+        
+        return try {
+            val responseClass = response.javaClass
+            val emv = responseClass.getMethod("getEmv").invoke(response)
+            if (emv != null) {
+                val emvClass = emv.javaClass
+                mapOf(
+                    "applicationId" to (emvClass.getMethod("getAid").invoke(emv) as? String),
+                    "applicationLabel" to (emvClass.getMethod("getApplicationLabel").invoke(emv) as? String)
+                )
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error building EMV info map: ${e.message}")
+            null
+        }
+    }
+
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
-        eventChannel.setStreamHandler(null)
-        try { sharedVtp?.deinitialize() } catch (e: Exception) {}
+        statusEventChannel.setStreamHandler(null)
+        deviceEventChannel.setStreamHandler(null)
+        context = null
+    }
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activity = binding.activity
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        activity = null
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        activity = binding.activity
+    }
+
+    override fun onDetachedFromActivity() {
+        activity = null
     }
 }

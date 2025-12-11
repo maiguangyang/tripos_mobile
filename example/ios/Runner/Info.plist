@@ -45,52 +45,5 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-
-	<!-- ========================================== -->
-	<!-- ↓↓↓↓↓↓ triPOS SDK 必须权限配置 ↓↓↓↓↓↓ -->
-	<!-- ========================================== -->
-
-	<!-- 1. 蓝牙权限 (Moby 5500 等设备必须) -->
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>此应用需要蓝牙权限以连接 Moby 5500 等支付设备。</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>此应用需要蓝牙权限以连接支付设备。</string>
-
-	<!-- 2. 本地网络权限 (iOS 14+ 连接 Wi-Fi/网线 POS 机必须) -->
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>此应用需要本地网络权限以连接 TCP/IP 支付终端。</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_http._tcp</string>
-	</array>
-
-	<!-- 3. 外部附件协议 (SDK 文档 P14 要求，用于 MFi 认证设备) -->
-	<!-- 即使只用 Moby，SDK 初始化时也会检查这些协议，建议加上防止崩溃 -->
-	<key>UISupportedExternalAccessoryProtocols</key>
-	<array>
-		<string>com.ingenico.easypayemv.spm-transaction</string>
-		<string>com.ingenico.easypayemv.spm-networkaccess</string>
-		<string>com.ingenico.easypayemv.spm-configuration</string>
-		<string>com.ingenico.easypayemv.spm-sppchannel</string>
-		<string>com.ingenico.easypayemv.spm-pppchannel</string>
-	</array>
-
-	<!-- 4. 位置权限 (iOS 13 之前蓝牙扫描需要，新版 iOS 通常可选，保留以兼容旧逻辑) -->
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>此应用需要位置权限以发现附近的支付设备。</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>此应用需要位置权限以保持支付设备连接。</string>
-
-	<!-- 5. 网络安全配置 (允许 HTTP 请求，防止 ATS 拦截) -->
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
-
-	<!-- ========================================== -->
-	<!-- ↑↑↑↑↑↑ triPOS SDK 配置结束 ↑↑↑↑↑↑ -->
-	<!-- ========================================== -->
-
 </dict>
 </plist>

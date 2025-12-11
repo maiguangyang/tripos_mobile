@@ -4,7 +4,7 @@ version: 0.0.1
 homepage:
 
 environment:
-  sdk: ^3.10.0
+  sdk: ^3.10.1
   flutter: '>=3.3.0'
 
 dependencies:
@@ -36,7 +36,7 @@ flutter:
     platforms:
       android:
         package: com.example.tripos_mobile
-        pluginClass: TriposSamplePlugin
+        pluginClass: TriposMobilePlugin
       ios:
         pluginClass: TriposMobilePlugin
 
