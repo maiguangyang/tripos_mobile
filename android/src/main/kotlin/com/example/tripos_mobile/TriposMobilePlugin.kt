@@ -143,6 +143,10 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
     }
 
+    // Track device ready state
+    @Volatile
+    private var isDeviceReady = false
+    
     private fun initialize(call: MethodCall, result: Result) {
         val ctx = context ?: run {
             result.error("NO_CONTEXT", "Context is not available", null)
@@ -154,9 +158,18 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             val config = buildConfiguration(configMap)
             currentConfiguration = config
             
+            // Reset device ready state
+            isDeviceReady = false
+            
+            // Use CountDownLatch to wait for device connection
+            val connectionLatch = java.util.concurrent.CountDownLatch(1)
+            var connectionError: Exception? = null
+            
             val connectionListener = object : DeviceConnectionListener {
                 override fun onConnected(device: Device?, description: String?, model: String?, serialNumber: String?) {
                     Log.i(TAG, "Device connected: $description, $model, $serialNumber")
+                    isDeviceReady = true
+                    connectionLatch.countDown()
                     mainHandler.post {
                         deviceEventSink?.success(mapOf(
                             "event" to "connected",
@@ -169,6 +182,7 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 
                 override fun onDisconnected(device: Device?) {
                     Log.i(TAG, "Device disconnected")
+                    isDeviceReady = false
                     mainHandler.post {
                         deviceEventSink?.success(mapOf("event" to "disconnected"))
                     }
@@ -176,6 +190,8 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 
                 override fun onError(exception: Exception?) {
                     Log.e(TAG, "Device error: ${exception?.message}")
+                    connectionError = exception
+                    connectionLatch.countDown()
                     mainHandler.post {
                         deviceEventSink?.success(mapOf(
                             "event" to "error",
@@ -213,7 +229,29 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             
             Thread {
                 try {
+                    Log.i(TAG, "Starting SDK initialization...")
                     vtp.initialize(ctx, config, connectionListener, null)
+                    Log.i(TAG, "SDK initialize() returned, waiting for onConnected callback...")
+                    
+                    // Wait for onConnected callback (timeout: 30 seconds)
+                    val connected = connectionLatch.await(30, java.util.concurrent.TimeUnit.SECONDS)
+                    
+                    if (!connected) {
+                        Log.e(TAG, "Connection timeout waiting for device")
+                        mainHandler.post {
+                            result.error("CONNECTION_TIMEOUT", "Timeout waiting for device connection", null)
+                        }
+                        return@Thread
+                    }
+                    
+                    if (connectionError != null) {
+                        Log.e(TAG, "Connection error: ${connectionError?.message}")
+                        mainHandler.post {
+                            result.error("CONNECTION_ERROR", connectionError?.message, null)
+                        }
+                        return@Thread
+                    }
+                    
                     mainHandler.post {
                         result.success(true)
                     }
@@ -262,46 +300,56 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             return
         }
         
-        try {
-            // Cancel any ongoing transaction first
+        // Run on background thread to allow for delay
+        Thread {
             try {
-                vtp.cancelCurrentFlow()
-                Log.d(TAG, "Cancelled any previous flow")
-            } catch (e: Exception) {
-                Log.d(TAG, "No flow to cancel: ${e.message}")
-            }
-            
-            val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
-            val saleRequest = buildSaleRequest(requestMap)
-            Log.i(TAG, "Sale request built: amount=${saleRequest.transactionAmount}")
-            
-            setupStatusListener()
-            
-            Log.i(TAG, "Calling vtp.processSaleRequest...")
-            vtp.processSaleRequest(saleRequest, object : SaleRequestListener {
-                override fun onSaleRequestCompleted(response: SaleResponse?) {
-                    Log.i(TAG, "onSaleRequestCompleted: response=${response}")
-                    Log.i(TAG, "Transaction status: ${response?.transactionStatus}")
-                    mainHandler.post {
-                        result.success(buildSaleResponseMap(response))
-                    }
+                // Cancel any ongoing transaction first and wait for device to reset
+                try {
+                    Log.d(TAG, "Cancelling any previous flow...")
+                    vtp.cancelCurrentFlow()
+                    Log.d(TAG, "Cancelled previous flow, waiting for device reset...")
+                    // Give device time to fully reset before starting new transaction
+                    Thread.sleep(1500)
+                } catch (e: Exception) {
+                    Log.d(TAG, "No flow to cancel or cancel error: ${e.message}")
                 }
                 
-                override fun onSaleRequestError(exception: Exception?) {
-                    Log.e(TAG, "onSaleRequestError: ${exception?.message}", exception)
-                    mainHandler.post {
-                        result.success(mapOf(
-                            "transactionStatus" to "error",
-                            "errorMessage" to (exception?.message ?: "Unknown error")
-                        ))
-                    }
+                val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+                val saleRequest = buildSaleRequest(requestMap)
+                Log.i(TAG, "Sale request built: amount=${saleRequest.transactionAmount}")
+                
+                mainHandler.post {
+                    setupStatusListener()
                 }
-            }, null)
-            Log.i(TAG, "processSaleRequest called, waiting for callback...")
-        } catch (e: Exception) {
-            Log.e(TAG, "processSale exception: ${e.message}", e)
-            result.error("SALE_ERROR", e.message, null)
-        }
+                
+                Log.i(TAG, "Calling vtp.processSaleRequest...")
+                vtp.processSaleRequest(saleRequest, object : SaleRequestListener {
+                    override fun onSaleRequestCompleted(response: SaleResponse?) {
+                        Log.i(TAG, "onSaleRequestCompleted: response=${response}")
+                        Log.i(TAG, "Transaction status: ${response?.transactionStatus}")
+                        mainHandler.post {
+                            result.success(buildSaleResponseMap(response))
+                        }
+                    }
+                    
+                    override fun onSaleRequestError(exception: Exception?) {
+                        Log.e(TAG, "onSaleRequestError: ${exception?.message}", exception)
+                        mainHandler.post {
+                            result.success(mapOf(
+                                "transactionStatus" to "error",
+                                "errorMessage" to (exception?.message ?: "Unknown error")
+                            ))
+                        }
+                    }
+                }, null)
+                Log.i(TAG, "processSaleRequest called, waiting for callback...")
+            } catch (e: Exception) {
+                Log.e(TAG, "processSale exception: ${e.message}", e)
+                mainHandler.post {
+                    result.error("SALE_ERROR", e.message, null)
+                }
+            }
+        }.start()
     }
 
     private fun processRefund(call: MethodCall, result: Result) {
