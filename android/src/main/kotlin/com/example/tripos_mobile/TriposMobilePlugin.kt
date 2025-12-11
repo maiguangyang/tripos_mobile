@@ -253,25 +253,41 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     private fun processSale(call: MethodCall, result: Result) {
+        Log.i(TAG, "processSale called")
+        
         if (!vtp.isInitialized) {
+            Log.e(TAG, "processSale: SDK not initialized")
             result.error("NOT_INITIALIZED", "SDK is not initialized", null)
             return
         }
         
         try {
+            // Cancel any ongoing transaction first
+            try {
+                vtp.cancelCurrentFlow()
+                Log.d(TAG, "Cancelled any previous flow")
+            } catch (e: Exception) {
+                Log.d(TAG, "No flow to cancel: ${e.message}")
+            }
+            
             val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
             val saleRequest = buildSaleRequest(requestMap)
+            Log.i(TAG, "Sale request built: amount=${saleRequest.transactionAmount}")
             
             setupStatusListener()
             
+            Log.i(TAG, "Calling vtp.processSaleRequest...")
             vtp.processSaleRequest(saleRequest, object : SaleRequestListener {
                 override fun onSaleRequestCompleted(response: SaleResponse?) {
+                    Log.i(TAG, "onSaleRequestCompleted: response=${response}")
+                    Log.i(TAG, "Transaction status: ${response?.transactionStatus}")
                     mainHandler.post {
                         result.success(buildSaleResponseMap(response))
                     }
                 }
                 
                 override fun onSaleRequestError(exception: Exception?) {
+                    Log.e(TAG, "onSaleRequestError: ${exception?.message}", exception)
                     mainHandler.post {
                         result.success(mapOf(
                             "transactionStatus" to "error",
@@ -280,7 +296,9 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                     }
                 }
             }, null)
+            Log.i(TAG, "processSaleRequest called, waiting for callback...")
         } catch (e: Exception) {
+            Log.e(TAG, "processSale exception: ${e.message}", e)
             result.error("SALE_ERROR", e.message, null)
         }
     }
@@ -731,12 +749,12 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         if (host == null) return null
         
         return try {
-            val hostClass = host.javaClass
             mapOf(
-                "transactionId" to hostClass.getMethod("getTransactionID").invoke(host) as? String,
-                "authCode" to hostClass.getMethod("getAuthorizationCode").invoke(host) as? String,
-                "responseCode" to hostClass.getMethod("getResponseCode").invoke(host) as? String,
-                "responseMessage" to hostClass.getMethod("getResponseMessage").invoke(host) as? String
+                "transactionId" to getFieldSafe(host, "TransactionID", "transactionId", "transactionID"),
+                "authCode" to getFieldSafe(host, "AuthCode", "AuthorizationCode", "authorizationCode"),
+                "responseCode" to getFieldSafe(host, "ResponseCode", "responseCode"),
+                "responseMessage" to getFieldSafe(host, "ResponseMessage", "responseMessage"),
+                "approvalNumber" to getFieldSafe(host, "ApprovalNumber", "approvalNumber")
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error building host response map: ${e.message}")
@@ -748,16 +766,56 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         if (response == null) return null
         
         return try {
-            val responseClass = response.javaClass
             mapOf(
-                "maskedCardNumber" to (responseClass.getMethod("getMaskedAccountNumber").invoke(response) as? String),
-                "cardBrand" to (responseClass.getMethod("getCardLogo").invoke(response)?.toString()),
-                "entryMode" to (responseClass.getMethod("getEntryMode").invoke(response)?.toString()?.lowercase())
+                "maskedCardNumber" to getFieldSafe(response, "AccountNumber", "MaskedAccountNumber", "maskedCardNumber", "CardNumber"),
+                "cardBrand" to getFieldSafe(response, "CardLogo", "cardLogo", "CardBrand"),
+                "entryMode" to getFieldSafe(response, "EntryMode", "entryMode")?.toString()?.lowercase()
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error building card info map: ${e.message}")
             null
         }
+    }
+
+    // Helper to try multiple possible field/method names
+    private fun getFieldSafe(obj: Any, vararg fieldNames: String): Any? {
+        val objClass = obj.javaClass
+        
+        for (fieldName in fieldNames) {
+            // Try getter method (getXxx)
+            try {
+                val getterName = "get$fieldName"
+                val method = objClass.getMethod(getterName)
+                val result = method.invoke(obj)
+                if (result != null) return result
+            } catch (e: Exception) { /* Try next */ }
+            
+            // Try getter with lowercase first char
+            try {
+                val getterName = "get${fieldName.replaceFirstChar { it.uppercase() }}"
+                val method = objClass.getMethod(getterName)
+                val result = method.invoke(obj)
+                if (result != null) return result
+            } catch (e: Exception) { /* Try next */ }
+            
+            // Try direct field access
+            try {
+                val field = objClass.getDeclaredField(fieldName)
+                field.isAccessible = true
+                val result = field.get(obj)
+                if (result != null) return result
+            } catch (e: Exception) { /* Try next */ }
+            
+            // Try lowercase field name
+            try {
+                val field = objClass.getDeclaredField(fieldName.lowercase())
+                field.isAccessible = true
+                val result = field.get(obj)
+                if (result != null) return result
+            } catch (e: Exception) { /* Try next */ }
+        }
+        
+        return null
     }
 
     private fun buildEmvInfoMap(response: Any?): Map<String, Any?>? {

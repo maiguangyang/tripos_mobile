@@ -104,8 +104,11 @@ enum MarketCode {
 
 /// Transaction status from SDK
 enum TransactionStatus {
-  /// Approved
+  /// Approved (online)
   approved,
+
+  /// Approved by merchant (offline/Store-and-Forward)
+  approvedByMerchant,
 
   /// Declined
   declined,

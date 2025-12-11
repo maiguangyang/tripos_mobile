@@ -245,12 +245,14 @@ class SaleResponse extends TransactionResponse {
       map['transactionStatus'] as String?,
     );
     return SaleResponse(
-      isApproved: transactionStatus == TransactionStatus.approved,
+      isApproved:
+          transactionStatus == TransactionStatus.approved ||
+          transactionStatus == TransactionStatus.approvedByMerchant,
       transactionStatus: transactionStatus,
       approvedAmount: (map['approvedAmount'] as num?)?.toDouble(),
-      host: HostResponse.fromMap(map['host'] as Map<String, dynamic>?),
-      card: CardInfo.fromMap(map['card'] as Map<String, dynamic>?),
-      emv: EmvInfo.fromMap(map['emv'] as Map<String, dynamic>?),
+      host: HostResponse.fromMap(_toStringDynamicMap(map['host'])),
+      card: CardInfo.fromMap(_toStringDynamicMap(map['card'])),
+      emv: EmvInfo.fromMap(_toStringDynamicMap(map['emv'])),
       errorMessage: map['errorMessage'] as String?,
       signatureData: map['signatureData'] as String?,
       tpId: map['tpId'] as String?,
@@ -267,6 +269,16 @@ class SaleResponse extends TransactionResponse {
       orElse: () => TransactionStatus.error,
     );
   }
+}
+
+/// Helper to safely convert platform channel Map<Object?, Object?> to Map<String, dynamic>
+Map<String, dynamic>? _toStringDynamicMap(dynamic value) {
+  if (value == null) return null;
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) {
+    return value.map((key, val) => MapEntry(key.toString(), val));
+  }
+  return null;
 }
 
 /// Refund transaction response
@@ -289,12 +301,14 @@ class RefundResponse extends TransactionResponse {
       map['transactionStatus'] as String?,
     );
     return RefundResponse(
-      isApproved: transactionStatus == TransactionStatus.approved,
+      isApproved:
+          transactionStatus == TransactionStatus.approved ||
+          transactionStatus == TransactionStatus.approvedByMerchant,
       transactionStatus: transactionStatus,
       approvedAmount: (map['approvedAmount'] as num?)?.toDouble(),
-      host: HostResponse.fromMap(map['host'] as Map<String, dynamic>?),
-      card: CardInfo.fromMap(map['card'] as Map<String, dynamic>?),
-      emv: EmvInfo.fromMap(map['emv'] as Map<String, dynamic>?),
+      host: HostResponse.fromMap(_toStringDynamicMap(map['host'])),
+      card: CardInfo.fromMap(_toStringDynamicMap(map['card'])),
+      emv: EmvInfo.fromMap(_toStringDynamicMap(map['emv'])),
       errorMessage: map['errorMessage'] as String?,
       signatureData: map['signatureData'] as String?,
       tpId: map['tpId'] as String?,
@@ -331,12 +345,14 @@ class VoidResponse extends TransactionResponse {
       map['transactionStatus'] as String?,
     );
     return VoidResponse(
-      isApproved: transactionStatus == TransactionStatus.approved,
+      isApproved:
+          transactionStatus == TransactionStatus.approved ||
+          transactionStatus == TransactionStatus.approvedByMerchant,
       transactionStatus: transactionStatus,
       approvedAmount: (map['approvedAmount'] as num?)?.toDouble(),
-      host: HostResponse.fromMap(map['host'] as Map<String, dynamic>?),
-      card: CardInfo.fromMap(map['card'] as Map<String, dynamic>?),
-      emv: EmvInfo.fromMap(map['emv'] as Map<String, dynamic>?),
+      host: HostResponse.fromMap(_toStringDynamicMap(map['host'])),
+      card: CardInfo.fromMap(_toStringDynamicMap(map['card'])),
+      emv: EmvInfo.fromMap(_toStringDynamicMap(map['emv'])),
       errorMessage: map['errorMessage'] as String?,
       signatureData: map['signatureData'] as String?,
       tpId: map['tpId'] as String?,
@@ -373,12 +389,14 @@ class AuthorizationResponse extends TransactionResponse {
       map['transactionStatus'] as String?,
     );
     return AuthorizationResponse(
-      isApproved: transactionStatus == TransactionStatus.approved,
+      isApproved:
+          transactionStatus == TransactionStatus.approved ||
+          transactionStatus == TransactionStatus.approvedByMerchant,
       transactionStatus: transactionStatus,
       approvedAmount: (map['approvedAmount'] as num?)?.toDouble(),
-      host: HostResponse.fromMap(map['host'] as Map<String, dynamic>?),
-      card: CardInfo.fromMap(map['card'] as Map<String, dynamic>?),
-      emv: EmvInfo.fromMap(map['emv'] as Map<String, dynamic>?),
+      host: HostResponse.fromMap(_toStringDynamicMap(map['host'])),
+      card: CardInfo.fromMap(_toStringDynamicMap(map['card'])),
+      emv: EmvInfo.fromMap(_toStringDynamicMap(map['emv'])),
       errorMessage: map['errorMessage'] as String?,
       signatureData: map['signatureData'] as String?,
       tpId: map['tpId'] as String?,
