@@ -80,6 +80,7 @@ class TriposSamplePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
             "scanDevices" -> scanDevices(result)
             "connectDevice" -> connectDevice(call.arguments as? Map<String, Any>, result)
             "processPayment" -> processPayment(call.arguments as? Map<String, Any>, result)
+            "cancelPayment" -> cancelPayment(result)
             "disconnect" -> disconnect(result)
             else -> result.notImplemented()
         }
@@ -160,6 +161,16 @@ class TriposSamplePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
         } catch (e: Exception) {
             Log.e(TAG, "initSdk error", e)
             result.error("INIT_ERROR", e.message, null)
+        }
+    }
+
+    private fun cancelPayment(result: Result) {
+        try {
+            val method = vtp?.javaClass?.getMethod("cancelCurrentTransaction")
+            method?.invoke(vtp)
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("CANCEL_ERROR", e.message, null)
         }
     }
 

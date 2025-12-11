@@ -36,6 +36,10 @@ abstract class TriposMobilePlatform extends PlatformInterface {
     throw UnimplementedError('disconnect() has not been implemented.');
   }
 
+  Future<bool> cancelPayment() {
+    throw UnimplementedError('cancelPayment() has not been implemented.');
+  }
+
   Future<String?> getPlatformVersion() {
     throw UnimplementedError('platformVersion() has not been implemented.');
   }

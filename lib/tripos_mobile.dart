@@ -30,4 +30,8 @@ class TriposMobile {
   Future<bool> disconnect() {
     return TriposMobilePlatform.instance.disconnect();
   }
+
+  Future<bool> cancelPayment() {
+    return TriposMobilePlatform.instance.cancelPayment();
+  }
 }

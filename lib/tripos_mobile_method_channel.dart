@@ -84,4 +84,14 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
       throw Exception('断开连接失败: ${e.message ?? e.code}');
     }
   }
+
+  @override
+  Future<bool> cancelPayment() async {
+    try {
+      final bool? result = await methodChannel.invokeMethod<bool>('cancelPayment');
+      return result ?? false;
+    } on PlatformException catch (e) {
+      throw Exception('取消支付失败: ${e.message ?? e.code}');
+    }
+  }
 }

@@ -93,6 +93,7 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
                 val request = call.arguments as? Map<String, Any>
                 if (request != null) processPayment(request, result) else result.error("ARGS", "Request null", null)
             }
+            "cancelPayment" -> cancelPayment(result)
             "disconnect" -> disconnectDevice(result)
             else -> result.notImplemented()
         }
@@ -480,6 +481,16 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, EventChannel.Stream
             result.success(true) 
         } catch (e: Exception) { 
             result.error("ERR", e.message, null) 
+        }
+    }
+
+    private fun cancelPayment(result: Result) {
+        try {
+            val method = sharedVtp?.javaClass?.getMethod("cancelCurrentTransaction")
+            method?.invoke(sharedVtp)
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("CANCEL_ERROR", e.message, null)
         }
     }
 
