@@ -13,11 +13,16 @@ buildscript {
     }
 }
 
-// 【核心修复】这里做了改动：强制使用 project.file 指向插件自己的 libs 目录
+// 将插件的 libs 目录添加为 flatDir 仓库，这样消费者应用可以自动找到 AAR 文件
+// 这解决了通过 flutter pub add 安装插件时用户无法访问 AAR 的问题
 rootProject.allprojects {
     repositories {
         google()
         mavenCentral()
+        // 动态添加插件的 libs 目录作为 flatDir 仓库
+        flatDir {
+            dirs project(':tripos_mobile').file('libs')
+        }
     }
 }
 

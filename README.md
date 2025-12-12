@@ -39,17 +39,39 @@ android {
     
     packaging {
         resources {
-            excludes += listOf(
+            excludes += setOf(
                 "META-INF/DEPENDENCIES",
                 "META-INF/LICENSE",
                 "META-INF/LICENSE.txt",
                 "META-INF/NOTICE",
                 "META-INF/NOTICE.txt",
+                "META-INF/*.kotlin_module"
             )
+        }
+        // 必须：处理 native 库冲突
+        jniLibs {
+            pickFirsts += "lib/*/libtlvtree.so"
+            pickFirsts += "lib/*/libpcltools.so"
         }
     }
 }
+
+// 必须：添加 triPOS SDK AAR 依赖
+dependencies {
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    // triPOS SDK AAR 文件 - 通过插件的 flatDir 仓库自动解析
+    implementation(mapOf("name" to "triposmobilesdk-release", "ext" to "aar"))
+    implementation(mapOf("name" to "rba_sdk", "ext" to "aar"))
+    implementation(mapOf("name" to "roamreaderunifiedapi-2.5.3.100-release", "ext" to "aar"))
+    implementation(mapOf("name" to "retail-types-release-22.01.06.01-0010", "ext" to "aar"))
+    implementation(mapOf("name" to "ux-server-release-22.01.06.01-0010", "ext" to "aar"))
+    implementation(mapOf("name" to "PclServiceLib_2.21.02", "ext" to "aar"))
+    implementation(mapOf("name" to "PclUtilities_2.21.02", "ext" to "aar"))
+    implementation(mapOf("name" to "iPclBridge", "ext" to "aar"))
+}
 ```
+
+> **说明**：AAR 文件已包含在插件中，通过 `flatDir` 仓库自动解析，无需手动复制文件。
 
 #### 2.2 修改 `android/app/src/main/AndroidManifest.xml`
 

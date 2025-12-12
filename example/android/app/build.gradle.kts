@@ -63,5 +63,14 @@ flutter {
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation(fileTree(mapOf("dir" to "../../../android/libs", "include" to listOf("*.aar"))))
+    // triPOS SDK AAR 文件 - 通过插件的 flatDir 仓库自动解析
+    implementation(mapOf("name" to "triposmobilesdk-release", "ext" to "aar"))
+    implementation(mapOf("name" to "rba_sdk", "ext" to "aar"))
+    implementation(mapOf("name" to "roamreaderunifiedapi-2.5.3.100-release", "ext" to "aar"))
+    implementation(mapOf("name" to "retail-types-release-22.01.06.01-0010", "ext" to "aar"))
+    implementation(mapOf("name" to "ux-server-release-22.01.06.01-0010", "ext" to "aar"))
+    implementation(mapOf("name" to "PclServiceLib_2.21.02", "ext" to "aar"))
+    implementation(mapOf("name" to "PclUtilities_2.21.02", "ext" to "aar"))
+    implementation(mapOf("name" to "iPclBridge", "ext" to "aar"))
 }
+
