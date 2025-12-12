@@ -45,13 +45,15 @@ class TriposHomePage extends StatefulWidget {
 
 class _TriposHomePageState extends State<TriposHomePage> {
   final _tripos = TriposMobile();
-  final _amountController = TextEditingController(text: '1.00');
+  final _amountController = TextEditingController(text: '0.01');
   final _transactionIdController = TextEditingController();
 
+  static const applicationMode = ApplicationMode.production;
+
   // Test credentials
-  static const _testAcceptorId = '874767787';
-  static const _testAccountId = '1091187';
-  static const _testToken =
+  static const acceptorId = '874767787';
+  static const accountId = '123';
+  static const token =
       'D59509CCCA5068F9B5D231EAC735B84348CDE8F861B8D5A8BF82B847749B0EB824175F01';
 
   String _sdkVersion = 'Unknown';
@@ -69,9 +71,9 @@ class _TriposHomePageState extends State<TriposHomePage> {
   // Configuration for scanning - use specific device type as SDK requires it
   TriposConfiguration get _configuration => TriposConfiguration(
     hostConfiguration: const HostConfiguration(
-      acceptorId: _testAcceptorId,
-      accountId: _testAccountId,
-      accountToken: _testToken,
+      acceptorId: acceptorId,
+      accountId: accountId,
+      accountToken: token,
       applicationId: '8414',
       applicationName: 'triPOS Flutter Example',
       applicationVersion: '1.0.0',
@@ -85,7 +87,8 @@ class _TriposHomePageState extends State<TriposHomePage> {
       keyedEntryAllowed: true,
     ),
     applicationConfiguration: const ApplicationConfiguration(
-      applicationMode: ApplicationMode.testCertification,
+      // applicationMode: ApplicationMode.testCertification,
+      applicationMode: applicationMode,
       idlePrompt: 'triPOS Flutter',
     ),
   );
@@ -93,9 +96,9 @@ class _TriposHomePageState extends State<TriposHomePage> {
   // Configuration for initialization (with specific device type)
   TriposConfiguration get _initConfiguration => TriposConfiguration(
     hostConfiguration: const HostConfiguration(
-      acceptorId: _testAcceptorId,
-      accountId: _testAccountId,
-      accountToken: _testToken,
+      acceptorId: acceptorId,
+      accountId: accountId,
+      accountToken: token,
       applicationId: '8414',
       applicationName: 'triPOS Flutter Example',
       applicationVersion: '1.0.0',
@@ -109,8 +112,14 @@ class _TriposHomePageState extends State<TriposHomePage> {
       keyedEntryAllowed: true,
     ),
     applicationConfiguration: const ApplicationConfiguration(
-      applicationMode: ApplicationMode.testCertification,
+      applicationMode: applicationMode,
       idlePrompt: 'triPOS Flutter',
+    ),
+    // Re-enable Store-and-Forward for now (SSL/timeout issue prevents online mode)
+    storeAndForwardConfiguration: const StoreAndForwardConfiguration(
+      storingTransactionsAllowed:
+          true, // Allow offline transactions while SSL issue is resolved
+      shouldTransactionsBeAutomaticallyForwarded: true,
     ),
   );
 
@@ -1101,8 +1110,8 @@ class _TriposHomePageState extends State<TriposHomePage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Acceptor ID: $_testAcceptorId\n'
-                      'Account ID: $_testAccountId\n'
+                      'Acceptor ID: $acceptorId\n'
+                      'Account ID: $accountId\n'
                       'Mode: TestCertification',
                       style: TextStyle(
                         color: theme.colorScheme.onPrimaryContainer,

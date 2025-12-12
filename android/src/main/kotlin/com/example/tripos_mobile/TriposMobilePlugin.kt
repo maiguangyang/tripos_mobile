@@ -168,6 +168,7 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             val connectionListener = object : DeviceConnectionListener {
                 override fun onConnected(device: Device?, description: String?, model: String?, serialNumber: String?) {
                     Log.i(TAG, "Device connected: $description, $model, $serialNumber")
+
                     isDeviceReady = true
                     connectionLatch.countDown()
                     mainHandler.post {
@@ -321,6 +322,113 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 mainHandler.post {
                     setupStatusListener()
                 }
+
+                // DeviceInteractionListener - 处理 SDK 交互提示（如 Credit/Debit 选择）
+                val interactionListener = object : DeviceInteractionListener {
+                    // 使用反射调用回调方法 - 根据值类型查找匹配的方法
+                    private fun invokeCallbackMethod(listener: Any?, value: Any) {
+                        if (listener == null) return
+                        try {
+                            val valueClass = when (value) {
+                                is String -> String::class.java
+                                is Boolean -> java.lang.Boolean.TYPE  // primitive boolean
+                                is Int -> java.lang.Integer.TYPE
+                                else -> value.javaClass
+                            }
+                            
+                            // 首先查找参数类型匹配的方法
+                            val methods = listener.javaClass.declaredMethods
+                            for (method in methods) {
+                                if (method.parameterTypes.size == 1 && 
+                                    method.parameterTypes[0].isAssignableFrom(valueClass)) {
+                                    method.isAccessible = true
+                                    method.invoke(listener, value)
+                                    Log.i(TAG, "Callback invoked: ${method.name}($value)")
+                                    return
+                                }
+                            }
+                            
+                            // 如果没找到匹配的类型，尝试接口方法
+                            for (iface in listener.javaClass.interfaces) {
+                                for (method in iface.methods) {
+                                    if (method.parameterTypes.size == 1 &&
+                                        method.parameterTypes[0].isAssignableFrom(valueClass)) {
+                                        method.invoke(listener, value)
+                                        Log.i(TAG, "Callback invoked via interface: ${method.name}($value)")
+                                        return
+                                    }
+                                }
+                            }
+                            
+                            // 最后尝试所有单参数方法
+                            Log.w(TAG, "No matching method found for type $valueClass, trying all single-param methods")
+                            for (method in methods) {
+                                if (method.parameterTypes.size == 1) {
+                                    try {
+                                        method.isAccessible = true
+                                        method.invoke(listener, value)
+                                        Log.i(TAG, "Callback invoked (fallback): ${method.name}($value)")
+                                        return
+                                    } catch (e: Exception) {
+                                        Log.d(TAG, "Method ${method.name} failed: ${e.message}")
+                                    }
+                                }
+                            }
+                            
+                            Log.e(TAG, "No suitable callback method found")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to invoke callback: ${e.message}")
+                        }
+                    }
+
+                    // 当 SDK 需要用户在 Credit 和 Debit 之间选择时调用
+                    override fun onChoiceSelections(choices: Array<String>?, selectionType: SelectionType?, listener: DeviceInteractionListener.SelectChoiceListener?) {
+                        Log.i(TAG, "SDK Request Choice: ${choices?.contentToString()}, type: $selectionType")
+                        if (choices != null && choices.isNotEmpty() && listener != null) {
+                            Log.i(TAG, "Auto-selecting first option (index 0): ${choices[0]}")
+                            // selectChoice 方法需要的是选项索引 (int)，不是字符串
+                            invokeCallbackMethod(listener, 0)  // 选择第一个选项 (Credit)
+                        }
+                    }
+
+                    // 当 SDK 需要确认金额时调用
+                    override fun onAmountConfirmation(
+                        amountType: AmountConfirmationType?,
+                        amount: java.math.BigDecimal?,
+                        listener: DeviceInteractionListener.ConfirmAmountListener?
+                    ) {
+                        Log.i(TAG, "SDK Request Amount Confirmation: $amount, type: $amountType")
+                        invokeCallbackMethod(listener, true)
+                    }
+
+                    // 当 SDK 需要数字输入时调用 (例如小费金额)
+                    override fun onNumericInput(inputType: NumericInputType?, listener: DeviceInteractionListener.NumericInputListener?) {
+                        Log.i(TAG, "SDK Request Numeric Input: type=$inputType")
+                        invokeCallbackMethod(listener, "0")
+                    }
+
+                    // 当 SDK 需要选择应用 (多应用卡片) 时调用
+                    override fun onSelectApplication(applications: Array<String>?, listener: DeviceInteractionListener.SelectChoiceListener?) {
+                        Log.i(TAG, "SDK Request Select Application: ${applications?.contentToString()}")
+                        if (applications != null && applications.isNotEmpty() && listener != null) {
+                            Log.i(TAG, "Auto-selecting first application (index 0): ${applications[0]}")
+                            // selectChoice 方法需要的是选项索引 (int)，不是字符串
+                            invokeCallbackMethod(listener, 0)  // 选择第一个应用
+                        }
+                    }
+
+                    override fun onDisplayText(text: String?) {
+                        Log.i(TAG, "SDK Display Text: $text")
+                    }
+
+                    override fun onRemoveCard() {
+                        Log.i(TAG, "SDK: Please remove card")
+                    }
+
+                    override fun onCardRemoved() {
+                        Log.i(TAG, "SDK: Card removed")
+                    }
+                }
                 
                 Log.i(TAG, "Calling vtp.processSaleRequest...")
                 vtp.processSaleRequest(saleRequest, object : SaleRequestListener {
@@ -341,7 +449,7 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                             ))
                         }
                     }
-                }, null)
+                }, interactionListener)
                 Log.i(TAG, "processSaleRequest called, waiting for callback...")
             } catch (e: Exception) {
                 Log.e(TAG, "processSale exception: ${e.message}", e)
@@ -793,8 +901,39 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     // Response builders - using reflection for safe access
     private fun buildSaleResponseMap(response: SaleResponse?): Map<String, Any?> {
         if (response == null) {
+            Log.e(TAG, "buildSaleResponseMap: response is NULL")
             return mapOf("transactionStatus" to "error", "errorMessage" to "Null response")
         }
+        
+        // Enhanced logging to debug Express connection issues
+        Log.i(TAG, "=== SALE RESPONSE DETAILS ===")
+        Log.i(TAG, "TransactionStatus: ${response.transactionStatus?.name}")
+        Log.i(TAG, "ApprovedAmount: ${response.approvedAmount}")
+        Log.i(TAG, "TransactionAmount: ${getPropertySafe(response, "transactionAmount")}")
+        
+        // Log host response details (Express response)
+        val host = response.host
+        if (host != null) {
+            Log.i(TAG, "=== HOST (EXPRESS) RESPONSE ===")
+            Log.i(TAG, "ExpressResponseCode: ${getPropertySafe(host, "expressResponseCode")}")
+            Log.i(TAG, "ExpressResponseMessage: ${getPropertySafe(host, "expressResponseMessage")}")
+            Log.i(TAG, "ExpressTransactionStatus: ${getPropertySafe(host, "transactionStatus")}")
+            Log.i(TAG, "TransactionID: ${getPropertySafe(host, "transactionId")}")
+            Log.i(TAG, "ApprovalNumber: ${getPropertySafe(host, "approvalNumber")}")
+            Log.i(TAG, "GatewayMessage: ${getPropertySafe(host, "gatewayMessage")}")
+            Log.i(TAG, "HostResponseCode: ${getPropertySafe(host, "hostResponseCode")}")
+            Log.i(TAG, "HostResponseMessage: ${getPropertySafe(host, "hostResponseMessage")}")
+            Log.i(TAG, "ProcessorResponseCode: ${getPropertySafe(host, "processorResponseCode")}")
+            Log.i(TAG, "ProcessorResponseMessage: ${getPropertySafe(host, "processorResponseMessage")}")
+        } else {
+            Log.w(TAG, "Host response is NULL - Express may not have been reached")
+        }
+        
+        // Check for any errors
+        val errorMessage = getPropertySafe(response, "errorMessage")
+        val errors = getPropertySafe(response, "errors")
+        if (errorMessage != null) Log.e(TAG, "ErrorMessage: $errorMessage")
+        if (errors != null) Log.e(TAG, "Errors: $errors")
         
         // Check if this is a stored (offline) transaction
         val isStoredTransaction = response.transactionStatus?.name?.contains("Merchant", ignoreCase = true) == true
@@ -811,7 +950,8 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "host" to buildHostResponseMap(response.host),
             "card" to buildCardInfoMap(response),
             "emv" to buildEmvInfoMap(response),
-            "signatureData" to getPropertySafe(response, "signatureData")
+            "signatureData" to getPropertySafe(response, "signatureData"),
+            "errorMessage" to errorMessage
         )
     }
 
