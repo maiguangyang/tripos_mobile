@@ -1228,7 +1228,7 @@ class _TriposHomePageState extends State<TriposHomePage> {
                     Text(
                       'Acceptor ID: $acceptorId\n'
                       'Account ID: $accountId\n'
-                      'Mode: TestCertification',
+                      'Mode: ${applicationMode.name}',
                       style: TextStyle(
                         color: theme.colorScheme.onPrimaryContainer,
                         fontFamily: 'monospace',
