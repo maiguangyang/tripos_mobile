@@ -11,6 +11,7 @@ export 'models/responses.dart';
 export 'tripos_mobile_platform_interface.dart';
 
 import 'models/configuration.dart';
+import 'models/enums.dart';
 import 'models/requests.dart';
 import 'models/responses.dart';
 import 'tripos_mobile_platform_interface.dart';
@@ -137,8 +138,8 @@ class TriposMobile {
   /// Stream of transaction status updates
   ///
   /// Listen to this stream to receive real-time updates during
-  /// transaction processing (e.g., "WaitingForCard", "ReadingCard", etc.)
-  Stream<String> get statusStream {
+  /// transaction processing. Returns VtpStatus enum values.
+  Stream<VtpStatus> get statusStream {
     return TriposMobilePlatform.instance.statusStream;
   }
 

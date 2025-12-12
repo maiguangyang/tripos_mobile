@@ -1,6 +1,7 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'models/configuration.dart';
+import 'models/enums.dart';
 import 'models/requests.dart';
 import 'models/responses.dart';
 import 'tripos_mobile_method_channel.dart';
@@ -96,7 +97,7 @@ abstract class TriposMobilePlatform extends PlatformInterface {
   }
 
   /// Stream of transaction status updates
-  Stream<String> get statusStream {
+  Stream<VtpStatus> get statusStream {
     throw UnimplementedError('statusStream has not been implemented.');
   }
 

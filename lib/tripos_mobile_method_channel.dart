@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'models/configuration.dart';
+import 'models/enums.dart';
 import 'models/requests.dart';
 import 'models/responses.dart';
 import 'tripos_mobile_platform_interface.dart';
@@ -22,7 +23,7 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
   @visibleForTesting
   final deviceEventChannel = const EventChannel('tripos_mobile/device');
 
-  Stream<String>? _statusStream;
+  Stream<VtpStatus>? _statusStream;
   Stream<Map<String, dynamic>>? _deviceEventStream;
 
   @override
@@ -136,11 +137,32 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
   }
 
   @override
-  Stream<String> get statusStream {
+  Stream<VtpStatus> get statusStream {
     _statusStream ??= statusEventChannel.receiveBroadcastStream().map(
-      (event) => event.toString(),
+      (event) => _parseVtpStatus(event.toString()),
     );
     return _statusStream!;
+  }
+
+  /// 解析状态字符串为 VtpStatus 枚举
+  /// Android SDK 发送 PascalCase (如 RunningSale)
+  /// Dart 枚举使用 camelCase (如 runningSale)
+  VtpStatus _parseVtpStatus(String status) {
+    debugPrint('[VtpStatus] Raw: "$status"');
+
+    // SDK 发送 PascalCase，Dart 枚举是 camelCase
+    // 两者转为 lowercase 后比较即可
+    final statusLower = status.toLowerCase();
+
+    for (final value in VtpStatus.values) {
+      if (value.name.toLowerCase() == statusLower) {
+        debugPrint('[VtpStatus] Matched: ${value.name}');
+        return value;
+      }
+    }
+
+    debugPrint('[VtpStatus] No match found for: $status');
+    return VtpStatus.none;
   }
 
   @override

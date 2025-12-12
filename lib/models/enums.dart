@@ -133,84 +133,251 @@ enum PaymentProcessor {
 }
 
 /// VTP Status for transaction progress
+/// 交易状态枚举，与 triPOS Mobile SDK 的 VtpStatus 枚举完全对应
+/// 从 triposmobilesdk-release.aar 中提取的完整枚举列表
 enum VtpStatus {
-  /// Unknown status
-  unknown,
+  /// 无状态
+  none,
 
-  /// Idle
-  idle,
+  /// 正在执行健康检查
+  runningHealthCheck,
 
-  /// Card inserted
-  cardInserted,
+  /// 正在执行销售交易
+  runningSale,
 
-  /// Card removed
+  /// 正在执行退款交易
+  runningRefund,
+
+  /// 正在执行授权交易
+  runningAuthorization,
+
+  /// 正在执行令牌授权交易
+  runningAuthorizationWithToken,
+
+  /// 正在激活礼品卡
+  runningGiftCardActivate,
+
+  /// 正在查询礼品卡余额
+  runningGiftCardBalanceInquiry,
+
+  /// 正在充值礼品卡
+  runningGiftCardReload,
+
+  /// 正在创建令牌
+  runningCreateToken,
+
+  /// 正在使用交易ID创建令牌
+  runningCreateTokenWithTransactionId,
+
+  /// 正在执行令牌销售交易
+  runningSaleWithToken,
+
+  /// 正在手动转发交易
+  runningManuallyForward,
+
+  /// 正在查询 EBT 余额
+  runningEbtBalanceInquiry,
+
+  /// 正在处理 EBT 凭证
+  runningEbtVoucher,
+
+  /// 正在执行撤销交易
+  runningReversal,
+
+  /// 正在执行退货交易
+  runningReturn,
+
+  /// 正在执行增量授权
+  runningIncrementalAuthorization,
+
+  /// 正在执行作废交易
+  runningVoid,
+
+  /// 正在执行令牌退款交易
+  runningRefundWithToken,
+
+  /// 正在调整信用卡交易
+  runningCreditCardAdjustment,
+
+  /// 正在完成授权交易
+  runningAuthorizationCompletion,
+
+  /// 正在执行托管支付销售
+  runningHostedPaymentSale,
+
+  /// 正在执行托管支付授权
+  runningHostedPaymentAuthorization,
+
+  /// 正在关闭礼品卡
+  runningGiftCardClose,
+
+  /// 正在请求礼品卡余额转账
+  runningGiftCardBalanceTransferRequest,
+
+  /// 正在请求卸载礼品卡
+  runningGiftCardUnloadRequest,
+
+  /// 正在执行礼品卡余额转账
+  runningGiftCardBalanceTransfer,
+
+  /// 等待刷卡/插卡输入
+  gettingCardInput,
+
+  /// 等待刷卡/插卡/NFC输入
+  gettingCardInputTapInsertSwipe,
+
+  /// 等待插卡/刷卡输入
+  gettingCardInputInsertSwipe,
+
+  /// 等待NFC/刷卡输入
+  gettingCardInputTapSwipe,
+
+  /// 等待刷卡输入
+  gettingCardInputSwipe,
+
+  /// 等待选择支付方式
+  gettingPaymentType,
+
+  /// 等待选择 EBT 类型
+  gettingEbtType,
+
+  /// 等待确认手续费金额
+  gettingConvenienceFeeAmountConfirmation,
+
+  /// 询问是否添加小费
+  gettingWantTip,
+
+  /// 等待选择小费金额
+  gettingTipSelection,
+
+  /// 等待输入小费金额
+  gettingTipEntry,
+
+  /// 等待确认附加费金额
+  gettingSurchargeFeeAmountConfirmation,
+
+  /// 询问是否需要现金返还
+  gettingWantCashback,
+
+  /// 等待选择现金返还金额
+  gettingCashbackSelection,
+
+  /// 等待输入现金返还金额
+  gettingCashbackEntry,
+
+  /// 等待输入邮政编码
+  gettingPostalCode,
+
+  /// 等待确认总金额
+  gettingTotalAmountConfirmation,
+
+  /// 等待输入 PIN 码
+  gettingPin,
+
+  /// 继续 EMV 交易处理
+  gettingContinuingEmvTransaction,
+
+  /// 正在完成 EMV 交易
+  gettingFinalizingEmvTransaction,
+
+  /// 正在处理卡片输入
+  processingCardInput,
+
+  /// 正在发送到主机
+  sendingToHost,
+
+  /// 交易处理中
+  transactionProcessing,
+
+  /// 正在最终处理交易
+  finalizing,
+
+  /// 芯片读取失败
+  chipReadFailed,
+
+  /// 刷卡读取失败
+  swipeReadFailed,
+
+  /// 芯片卡刷卡读取失败（应插卡）
+  chipCardSwipedReadFailed,
+
+  /// 无法获取卡片数据
+  failedToRetrieveCardData,
+
+  /// 卡片数据读取超时
+  cardDataRetrievalTimeOut,
+
+  /// 启用仅手动输入卡号模式
+  enableCardKeyedOnlyInput,
+
+  /// PIN 码正确
+  pinOK,
+
+  /// 请重新输入 PIN 码
+  reEnterPin,
+
+  /// 最后一次 PIN 码尝试
+  lastPinTry,
+
+  /// PIN 码输入成功
+  pinEnteredSuccessfully,
+
+  /// PIN 码输入已取消
+  pinEntryCancelled,
+
+  /// 请移除卡片
+  removeCard,
+
+  /// 卡片已移除
   cardRemoved,
 
-  /// Card swipe detected
-  cardSwipeDetected,
-
-  /// Contact card type
-  contactCardType,
-
-  /// Contactless card type
-  contactlessCardType,
-
-  /// Mag stripe card type
-  magStripeCardType,
-
-  /// Transaction cancelled
+  /// 交易已取消
   transactionCancelled,
 
-  /// Waiting for card
-  waitingForCard,
+  /// 请选择应用程序
+  selectApplication,
 
-  /// Reading card
-  readingCard,
+  /// 卡片不支持非接触式读取
+  contactlessReadNotSupportedByCard,
 
-  /// Card read complete
-  cardReadComplete,
+  /// 金额超过非接触式交易限额
+  contactlessAmountMaxLimitExceeded,
 
-  /// Processing transaction
-  processingTransaction,
+  /// 检测到多张卡片，请重试
+  multipleCardsTappedError,
 
-  /// Transaction complete
-  transactionComplete,
+  /// 非接触式读取失败
+  contactlessReadFailed,
 
-  /// Waiting for PIN
-  waitingForPin,
+  /// 非接触式刷卡次数超过限制
+  contactlessTapsMaxNumberExceeded,
 
-  /// PIN entry complete
-  pinEntryComplete,
+  /// 卡片不支持（无匹配AID）
+  contactlessCardNotSupportedNoMatchingAID,
 
-  /// Waiting for signature
-  waitingForSignature,
+  /// 卡片要求更换读卡接口
+  contactlessCardRequestsInterfaceSwitch,
 
-  /// Signature complete
-  signatureComplete,
+  /// 正在显示 DCC 信息
+  showingDccInfo,
 
-  /// Waiting for amount confirmation
-  waitingForAmountConfirmation,
+  /// 请查看手机
+  pleaseSeePhone,
 
-  /// Amount confirmation complete
-  amountConfirmationComplete,
+  /// 金额已确认
+  amountConfirmed,
 
-  /// Waiting for tip
-  waitingForTip,
+  /// 附加费已确认
+  surchargeFeeAmountConfirmed,
 
-  /// Tip entry complete
-  tipEntryComplete,
+  /// 附加费已拒绝
+  surchargeFeeAmountDeclined,
 
-  /// Connecting to device
-  connectingToDevice,
+  /// 附加费确认超时
+  surchargeFeeAmountTimedOut,
 
-  /// Connected to device
-  connectedToDevice,
-
-  /// Disconnected from device
-  disconnectedFromDevice,
-
-  /// Device error
-  deviceError,
+  /// 卡片不支持现金返还
+  cashbackUnsupportedCard,
 }
 
 /// Address verification condition

@@ -65,7 +65,7 @@ class _TriposHomePageState extends State<TriposHomePage> {
   String? _selectedDevice;
   String _transactionResult = '';
 
-  StreamSubscription<String>? _statusSubscription;
+  StreamSubscription<VtpStatus>? _statusSubscription;
   StreamSubscription<Map<String, dynamic>>? _deviceEventSubscription;
 
   // Configuration for scanning - use specific device type as SDK requires it
@@ -139,10 +139,10 @@ class _TriposHomePageState extends State<TriposHomePage> {
       _status = initialized ? 'Initialized' : 'Not initialized';
     });
 
-    // Listen to status updates
+    // Listen to status updates (使用 VtpStatus 枚举)
     _statusSubscription = _tripos.statusStream.listen((status) {
       setState(() {
-        _status = status;
+        _status = _formatVtpStatus(status);
       });
     });
 
@@ -157,6 +157,122 @@ class _TriposHomePageState extends State<TriposHomePage> {
         _showSnackBar('Device error: ${event['message']}', isError: true);
       }
     });
+  }
+
+  /// 将 VtpStatus 枚举转换为可读的中文状态文本
+  String _formatVtpStatus(VtpStatus status) {
+    return switch (status) {
+      // 基础状态
+      VtpStatus.none => '无',
+
+      // 运行状态 - 交易类型
+      VtpStatus.runningHealthCheck => '正在健康检查...',
+      VtpStatus.runningSale => '正在执行销售...',
+      VtpStatus.runningRefund => '正在执行退款...',
+      VtpStatus.runningAuthorization => '正在执行授权...',
+      VtpStatus.runningAuthorizationWithToken => '正在执行令牌授权...',
+      VtpStatus.runningVoid => '正在执行作废...',
+      VtpStatus.runningReturn => '正在执行退货...',
+      VtpStatus.runningSaleWithToken => '正在执行令牌销售...',
+      VtpStatus.runningRefundWithToken => '正在执行令牌退款...',
+      VtpStatus.runningReversal => '正在执行撤销...',
+      VtpStatus.runningCreditCardAdjustment => '正在调整信用卡...',
+      VtpStatus.runningAuthorizationCompletion => '正在完成授权...',
+      VtpStatus.runningIncrementalAuthorization => '正在增量授权...',
+      VtpStatus.runningManuallyForward => '正在手动转发...',
+      VtpStatus.runningHostedPaymentSale => '正在托管支付销售...',
+      VtpStatus.runningHostedPaymentAuthorization => '正在托管支付授权...',
+
+      // 礼品卡相关
+      VtpStatus.runningGiftCardActivate => '正在激活礼品卡...',
+      VtpStatus.runningGiftCardBalanceInquiry => '正在查询礼品卡余额...',
+      VtpStatus.runningGiftCardReload => '正在充值礼品卡...',
+      VtpStatus.runningGiftCardClose => '正在关闭礼品卡...',
+      VtpStatus.runningGiftCardBalanceTransferRequest => '正在转账礼品卡...',
+      VtpStatus.runningGiftCardUnloadRequest => '正在卸载礼品卡...',
+      VtpStatus.runningGiftCardBalanceTransfer => '正在礼品卡余额转账...',
+
+      // Token 相关
+      VtpStatus.runningCreateToken => '正在创建令牌...',
+      VtpStatus.runningCreateTokenWithTransactionId => '正在创建交易令牌...',
+
+      // EBT 相关
+      VtpStatus.runningEbtBalanceInquiry => '正在查询 EBT 余额...',
+      VtpStatus.runningEbtVoucher => '正在处理 EBT 凭证...',
+
+      // 获取输入状态
+      VtpStatus.gettingCardInput => '请刷卡/插卡...',
+      VtpStatus.gettingCardInputTapInsertSwipe => '请刷卡/插卡/NFC...',
+      VtpStatus.gettingCardInputInsertSwipe => '请插卡/刷卡...',
+      VtpStatus.gettingCardInputTapSwipe => '请NFC/刷卡...',
+      VtpStatus.gettingCardInputSwipe => '请刷卡...',
+      VtpStatus.gettingPaymentType => '请选择支付方式...',
+      VtpStatus.gettingEbtType => '请选择 EBT 类型...',
+      VtpStatus.gettingConvenienceFeeAmountConfirmation => '请确认手续费...',
+      VtpStatus.gettingWantTip => '是否添加小费?',
+      VtpStatus.gettingTipSelection => '请选择小费金额...',
+      VtpStatus.gettingTipEntry => '请输入小费...',
+      VtpStatus.gettingSurchargeFeeAmountConfirmation => '请确认附加费...',
+      VtpStatus.gettingWantCashback => '是否需要现金返还?',
+      VtpStatus.gettingCashbackSelection => '请选择现金返还金额...',
+      VtpStatus.gettingCashbackEntry => '请输入现金返还金额...',
+      VtpStatus.gettingPostalCode => '请输入邮编...',
+      VtpStatus.gettingTotalAmountConfirmation => '请确认总金额...',
+      VtpStatus.gettingPin => '请输入 PIN 码...',
+      VtpStatus.gettingContinuingEmvTransaction => '继续 EMV 交易...',
+      VtpStatus.gettingFinalizingEmvTransaction => '正在完成 EMV 交易...',
+
+      // 处理状态
+      VtpStatus.processingCardInput => '正在处理卡片...',
+      VtpStatus.sendingToHost => '正在发送到主机...',
+      VtpStatus.transactionProcessing => '交易处理中...',
+      VtpStatus.finalizing => '正在最终处理...',
+
+      // 卡片读取失败
+      VtpStatus.chipReadFailed => '芯片读取失败',
+      VtpStatus.swipeReadFailed => '刷卡读取失败',
+      VtpStatus.chipCardSwipedReadFailed => '芯片卡刷卡读取失败',
+      VtpStatus.failedToRetrieveCardData => '无法获取卡片数据',
+      VtpStatus.cardDataRetrievalTimeOut => '卡片数据读取超时',
+      VtpStatus.enableCardKeyedOnlyInput => '请手动输入卡号',
+
+      // PIN 状态
+      VtpStatus.pinOK => 'PIN 码正确',
+      VtpStatus.reEnterPin => '请重新输入 PIN 码',
+      VtpStatus.lastPinTry => '最后一次 PIN 码尝试',
+      VtpStatus.pinEnteredSuccessfully => 'PIN 码输入成功',
+      VtpStatus.pinEntryCancelled => 'PIN 码输入已取消',
+
+      // 卡片状态
+      VtpStatus.removeCard => '请移除卡片',
+      VtpStatus.cardRemoved => '卡片已移除',
+
+      // 交易结果状态
+      VtpStatus.transactionCancelled => '交易已取消',
+
+      // 选择状态
+      VtpStatus.selectApplication => '请选择应用程序',
+
+      // 非接触式状态
+      VtpStatus.contactlessReadNotSupportedByCard => '卡片不支持非接触式读取',
+      VtpStatus.contactlessAmountMaxLimitExceeded => '金额超过非接触式限额',
+      VtpStatus.multipleCardsTappedError => '检测到多张卡片',
+      VtpStatus.contactlessReadFailed => '非接触式读取失败',
+      VtpStatus.contactlessTapsMaxNumberExceeded => '非接触式刷卡次数超限',
+      VtpStatus.contactlessCardNotSupportedNoMatchingAID => '卡片不支持',
+      VtpStatus.contactlessCardRequestsInterfaceSwitch => '请更换读卡方式',
+
+      // 显示状态
+      VtpStatus.showingDccInfo => '显示 DCC 信息',
+      VtpStatus.pleaseSeePhone => '请查看手机',
+
+      // 确认状态
+      VtpStatus.amountConfirmed => '金额已确认',
+      VtpStatus.surchargeFeeAmountConfirmed => '附加费已确认',
+      VtpStatus.surchargeFeeAmountDeclined => '附加费已拒绝',
+      VtpStatus.surchargeFeeAmountTimedOut => '附加费确认超时',
+      VtpStatus.cashbackUnsupportedCard => '卡片不支持现金返还',
+    };
   }
 
   @override
