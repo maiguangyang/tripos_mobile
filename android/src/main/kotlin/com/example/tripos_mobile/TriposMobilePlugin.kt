@@ -253,6 +253,13 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                         return@Thread
                     }
                     
+                    // Wait for device to fully stabilize after connection
+                    // The SDK fires onConnected before internal initialization is complete,
+                    // which can cause the first card swipe to be unresponsive.
+                    Log.i(TAG, "Device connected, waiting for stabilization...")
+                    Thread.sleep(2000)
+                    Log.i(TAG, "Device stabilization complete, ready for transactions")
+                    
                     mainHandler.post {
                         result.success(true)
                     }
