@@ -1,9 +1,9 @@
 # triPOS Mobile Flutter Plugin
 
-[![Platform](https://img.shields.io/badge/Platform-Android-green.svg)](https://developer.android.com)
+[![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS-green.svg)](https://developer.android.com)
 [![Flutter](https://img.shields.io/badge/Flutter-3.3.0+-blue.svg)](https://flutter.dev)
 
-基于 Worldpay triPOS Mobile Android SDK 的 Flutter 插件，支持 Ingenico 蓝牙读卡器进行移动支付。
+基于 Worldpay triPOS Mobile SDK 的 Flutter 插件，支持 Android 和 iOS 平台通过 Ingenico 蓝牙读卡器进行移动支付。
 
 ## ✨ 功能特性
 
@@ -48,7 +48,6 @@ android {
                 "META-INF/*.kotlin_module"
             )
         }
-        // 必须：处理 native 库冲突
         jniLibs {
             pickFirsts += "lib/*/libtlvtree.so"
             pickFirsts += "lib/*/libpcltools.so"
@@ -56,10 +55,8 @@ android {
     }
 }
 
-// 必须：添加 triPOS SDK AAR 依赖
 dependencies {
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    // triPOS SDK AAR 文件 - 通过插件的 flatDir 仓库自动解析
+    // triPOS SDK AAR - 插件已包含这些文件，通过 flatDir 仓库自动解析
     implementation(mapOf("name" to "triposmobilesdk-release", "ext" to "aar"))
     implementation(mapOf("name" to "rba_sdk", "ext" to "aar"))
     implementation(mapOf("name" to "roamreaderunifiedapi-2.5.3.100-release", "ext" to "aar"))
@@ -71,9 +68,15 @@ dependencies {
 }
 ```
 
-> **说明**：AAR 文件已包含在插件中，通过 `flatDir` 仓库自动解析，无需手动复制文件。
+> **💡 说明**
+> 
+> - AAR 文件已包含在插件的 `android/libs/` 目录中
+> - 插件会自动配置 `flatDir` 仓库，用户无需手动复制 AAR 文件
+> - 用户只需在 `build.gradle.kts` 中声明依赖即可
 
 #### 2.2 修改 `android/app/src/main/AndroidManifest.xml`
+
+添加蓝牙权限：
 
 ```xml
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -100,6 +103,89 @@ dependencies {
 dependencies:
   permission_handler: ^11.0.0
 ```
+
+
+---
+
+### 3. iOS 配置
+
+#### 3.1 系统要求
+
+- iOS 13.0 或更高版本
+- Xcode 14.0 或更高版本
+
+#### 3.2 triPOS SDK Framework
+
+> **✅ SDK 已包含在插件中**
+> 
+> `triPOSMobileSDK.xcframework` 已打包在插件的 `ios/Frameworks/` 目录中，用户无需单独获取。
+> 使用 `flutter pub add` 或添加依赖后，运行 `pod install` 即可自动链接。
+
+**安装步骤：**
+
+```bash
+# 在你的 Flutter 项目根目录执行
+cd ios && pod install
+```
+
+> **💡 如需最新版 SDK**
+> 
+> 如果需要更新 SDK 版本，请联系 [Worldpay](https://www.worldpay.com/) 获取最新的 `triPOSMobileSDK.xcframework`，
+> 然后替换插件 `ios/Frameworks/` 目录中的文件。
+
+
+#### 3.3 修改 `ios/Runner/Info.plist`
+
+添加蓝牙权限说明：
+
+```xml
+<dict>
+    <!-- 蓝牙权限 -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>需要蓝牙权限来连接支付设备</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>需要蓝牙权限来连接支付设备</string>
+    
+    <!-- 后台模式（可选：允许后台蓝牙连接）-->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>bluetooth-central</string>
+        <string>bluetooth-peripheral</string>
+    </array>
+</dict>
+```
+
+#### 3.4 Podfile 配置
+
+确保你的 `ios/Podfile` 设置了正确的最低版本：
+
+```ruby
+platform :ios, '13.0'
+
+# 如果使用 use_frameworks!，确保添加以下配置
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+    end
+  end
+end
+```
+
+#### 3.5 iOS 特性说明
+
+| 功能 | Android | iOS | 说明 |
+|------|---------|-----|------|
+| 蓝牙扫描 | ✅ | ✅ | 完全支持 |
+| 设备连接 | ✅ | ✅ | 完全支持 |
+| 销售 (Sale) | ✅ | ✅ | 完全支持 |
+| 退款 (Refund) | ✅ | ✅ | 完全支持 |
+| 关联退款 | ✅ | ✅ | 完全支持 |
+| 作废 (Void) | ✅ | ✅ | 完全支持 |
+| 离线模式 (S&F) | ✅ | ✅ | 完全支持 |
+| 状态监听 | ✅ | ✅ | 完全支持 |
+
+
 
 ## 🚀 快速开始
 
@@ -511,28 +597,69 @@ tripos.deviceEventStream.listen((event) {
 
 ## 🔧 故障排除
 
-### 1. 设备扫描找不到设备
+### Android
+
+#### 1. 设备扫描找不到设备
 
 - 确保设备已开机并处于可发现状态
 - 检查蓝牙和位置权限是否已授予
 - Android 10+ 需要位置权限才能扫描蓝牙
 
-### 2. 初始化失败
+#### 2. 初始化失败
 
 - 确认 `identifier` 已正确设置为扫描到的设备名称
 - 检查 `minSdk` 是否设置为 29 或更高
 - 查看 Logcat 中 `TriposMobilePlugin` 标签的日志
 
-### 3. 交易失败返回 "Invalid AccountToken"
+#### 3. 交易失败返回 "Invalid AccountToken"
 
 - 确认 `applicationMode` 与凭证环境匹配：
   - 测试凭证 → `ApplicationMode.testCertification`
   - 生产凭证 → `ApplicationMode.production`
 
-### 4. 首次刷卡无响应
+#### 4. 首次刷卡无响应
 
 - SDK 初始化后设备需要稳定时间
 - 插件已内置 2 秒延迟，如仍有问题可稍等后重试
+
+---
+
+### iOS
+
+#### 1. 设备扫描找不到设备
+
+- 确保 `Info.plist` 中已添加蓝牙权限说明
+- 在 iOS 设置中确认 App 已获得蓝牙权限
+- 确保设备已开机并在可发现模式
+
+#### 2. 编译错误：找不到 triPOSMobileSDK
+
+- 运行 `cd ios && pod install --repo-update`
+- 确认 `triPOSMobileSDK.xcframework` 在 `ios/Frameworks/` 目录中
+- 检查 Podspec 中 `vendored_frameworks` 路径是否正确
+
+#### 3. 离线交易显示 DECLINED
+
+- 确认 Store-and-Forward 配置正确：
+  ```dart
+  storeAndForwardConfiguration: StoreAndForwardConfiguration(
+    storingTransactionsAllowed: true,
+  ),
+  ```
+- 离线交易会返回 `transactionStatus: approvedByMerchant`
+- 检查 `isApproved` 应为 `true`
+
+#### 4. 连接设备后交易超时
+
+- 确保蓝牙连接稳定
+- 检查设备电量
+- 尝试重新初始化 SDK
+
+#### 5. 签名问题 (Code Signing)
+
+- 确保 `triPOSMobileSDK.xcframework` 设置为 "Embed & Sign"
+- 检查 Build Settings 中 `CODE_SIGN_IDENTITY` 设置
+
 
 ## 📄 许可证
 
