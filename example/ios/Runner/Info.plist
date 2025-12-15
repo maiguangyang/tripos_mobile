@@ -45,5 +45,15 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Bluetooth permissions for triPOS SDK -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>triPOS Mobile requires Bluetooth to connect to payment devices</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>triPOS Mobile requires Bluetooth to communicate with payment devices</string>
+	<!-- Location permission for Bluetooth scanning -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>triPOS Mobile requires location access for Bluetooth device scanning</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>triPOS Mobile requires location access for Bluetooth device scanning</string>
 </dict>
 </plist>

@@ -133,11 +133,25 @@ enum PaymentProcessor {
 }
 
 /// VTP Status for transaction progress
-/// 交易状态枚举，与 triPOS Mobile SDK 的 VtpStatus 枚举完全对应
-/// 从 triposmobilesdk-release.aar 中提取的完整枚举列表
+/// 交易状态枚举，同时支持 Android 和 iOS 平台
+/// - Android: 从 triposmobilesdk-release.aar 中的 VtpStatus 枚举提取
+/// - iOS: 从 triPOSMobileSDK.xcframework/Headers/VTPStatus.h 中提取
+/// 注意：某些状态可能仅在特定平台上使用
 enum VtpStatus {
   /// 无状态
   none,
+
+  /// 正在初始化
+  initializing,
+
+  /// 正在反初始化
+  deinitializing,
+
+  /// 交易完成
+  done,
+
+  /// 未知状态
+  unknown,
 
   /// 正在执行健康检查
   runningHealthCheck,

@@ -91,13 +91,42 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
         
         try {
+            // If already initialized/connected, deinitialize first before scanning
+            if (vtp.isInitialized) {
+                Log.i(TAG, "SDK already initialized, deinitializing before scan...")
+                vtp.deinitialize()
+                isDeviceReady = false
+            }
+            
             val configMap = call.arguments as? Map<*, *>
             val config = buildConfiguration(configMap)
             
             Log.i(TAG, "Starting Bluetooth scan...")
             
+            // Track if scan has completed (to prevent timeout callback after result)
+            var scanCompleted = false
+            
+            // Set a 10 second timeout for scanning
+            val timeoutRunnable = Runnable {
+                if (!scanCompleted) {
+                    scanCompleted = true
+                    Log.i(TAG, "Scan timeout - returning empty list")
+                    // Cleanup SDK state on timeout to allow rescan
+                    try { vtp.deinitialize() } catch (e: Exception) { /* ignore */ }
+                    isDeviceReady = false
+                    mainHandler.post {
+                        result.success(ArrayList<String>())
+                    }
+                }
+            }
+            mainHandler.postDelayed(timeoutRunnable, 10000)
+            
             vtp.scanBluetoothDevicesWithConfiguration(ctx, config, object : BluetoothScanRequestListener {
                 override fun onScanRequestCompleted(devices: ArrayList<String>?) {
+                    if (scanCompleted) return  // Timeout already fired
+                    scanCompleted = true
+                    mainHandler.removeCallbacks(timeoutRunnable)
+                    
                     Log.i(TAG, "Scan completed. Found ${devices?.size ?: 0} device(s): $devices")
                     
                     // Filter and sort devices - payment devices first
@@ -131,6 +160,10 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 }
                 
                 override fun onScanRequestError(exception: Exception?) {
+                    if (scanCompleted) return  // Timeout already fired
+                    scanCompleted = true
+                    mainHandler.removeCallbacks(timeoutRunnable)
+                    
                     Log.e(TAG, "Scan error: ${exception?.message}", exception)
                     mainHandler.post {
                         result.error("SCAN_ERROR", exception?.message ?: "Unknown error", null)

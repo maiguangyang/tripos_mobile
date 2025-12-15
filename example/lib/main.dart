@@ -51,10 +51,10 @@ class _TriposHomePageState extends State<TriposHomePage> {
   static const applicationMode = ApplicationMode.production;
 
   // Test credentials
-  static const acceptorId = '874767787';
-  static const accountId = '123';
+  static const acceptorId = '4445067657403';
+  static const accountId = '1401521';
   static const token =
-      'D59509CCCA5068F9B5D231EAC735B84348CDE8F861B8D5A8BF82B847749B0EB824175F01';
+      'DB2180A53160AEF166D3912DD23E9993C267C1D8BD3C4EE8AFA8D25D6C609A518FB2FE01';
 
   String _sdkVersion = 'Unknown';
   bool _isInitialized = false;
@@ -164,6 +164,10 @@ class _TriposHomePageState extends State<TriposHomePage> {
     return switch (status) {
       // 基础状态
       VtpStatus.none => '无',
+      VtpStatus.initializing => '正在初始化...',
+      VtpStatus.deinitializing => '正在反初始化...',
+      VtpStatus.done => '完成',
+      VtpStatus.unknown => '未知状态',
 
       // 运行状态 - 交易类型
       VtpStatus.runningHealthCheck => '正在健康检查...',
@@ -529,6 +533,10 @@ class _TriposHomePageState extends State<TriposHomePage> {
           response.host?.authCode,
           response.card?.maskedCardNumber,
           response.errorMessage,
+          expressResponseCode: response.host?.expressResponseCode,
+          expressResponseMessage: response.host?.expressResponseMessage,
+          hostResponseCode: response.host?.hostResponseCode,
+          hostResponseMessage: response.host?.hostResponseMessage,
         );
 
         if (response.isApproved && response.host?.transactionId != null) {
@@ -554,8 +562,6 @@ class _TriposHomePageState extends State<TriposHomePage> {
       setState(() {
         _isLoading = false;
       });
-
-      print("TransactionResult $_transactionResult");
     }
   }
 
@@ -755,8 +761,12 @@ class _TriposHomePageState extends State<TriposHomePage> {
     String? transactionId,
     String? authCode,
     String? maskedCard,
-    String? errorMessage,
-  ) {
+    String? errorMessage, {
+    String? expressResponseCode,
+    String? expressResponseMessage,
+    String? hostResponseCode,
+    String? hostResponseMessage,
+  }) {
     final buffer = StringBuffer();
     buffer.writeln('=== $type Result ===');
     buffer.writeln('Status: ${isApproved ? "APPROVED" : "DECLINED"}');
@@ -766,6 +776,19 @@ class _TriposHomePageState extends State<TriposHomePage> {
     if (transactionId != null) buffer.writeln('Transaction ID: $transactionId');
     if (authCode != null) buffer.writeln('Auth Code: $authCode');
     if (maskedCard != null) buffer.writeln('Card: $maskedCard');
+
+    // Show detailed error info for declined transactions
+    if (!isApproved) {
+      if (expressResponseCode != null)
+        buffer.writeln('Express Code: $expressResponseCode');
+      if (expressResponseMessage != null)
+        buffer.writeln('Express Message: $expressResponseMessage');
+      if (hostResponseCode != null)
+        buffer.writeln('Host Code: $hostResponseCode');
+      if (hostResponseMessage != null)
+        buffer.writeln('Host Message: $hostResponseMessage');
+    }
+
     if (errorMessage != null) buffer.writeln('Error: $errorMessage');
     return buffer.toString();
   }

@@ -25,6 +25,21 @@ class HostResponse {
   /// Batch number
   final String? batchNumber;
 
+  /// Express response code (iOS/Android)
+  final String? expressResponseCode;
+
+  /// Express response message (iOS/Android)
+  final String? expressResponseMessage;
+
+  /// Host response code (iOS/Android)
+  final String? hostResponseCode;
+
+  /// Host response message (iOS/Android)
+  final String? hostResponseMessage;
+
+  /// Processor name (iOS)
+  final String? processorName;
+
   const HostResponse({
     this.transactionId,
     this.referenceNumber,
@@ -33,6 +48,11 @@ class HostResponse {
     this.responseMessage,
     this.traceNumber,
     this.batchNumber,
+    this.expressResponseCode,
+    this.expressResponseMessage,
+    this.hostResponseCode,
+    this.hostResponseMessage,
+    this.processorName,
   });
 
   factory HostResponse.fromMap(Map<String, dynamic>? map) {
@@ -40,11 +60,16 @@ class HostResponse {
     return HostResponse(
       transactionId: map['transactionId'] as String?,
       referenceNumber: map['referenceNumber'] as String?,
-      authCode: map['authCode'] as String?,
+      authCode: map['authCode'] ?? map['approvalNumber'] as String?,
       responseCode: map['responseCode'] as String?,
       responseMessage: map['responseMessage'] as String?,
       traceNumber: map['traceNumber'] as String?,
       batchNumber: map['batchNumber'] as String?,
+      expressResponseCode: map['expressResponseCode'] as String?,
+      expressResponseMessage: map['expressResponseMessage'] as String?,
+      hostResponseCode: map['hostResponseCode'] as String?,
+      hostResponseMessage: map['hostResponseMessage'] as String?,
+      processorName: map['processorName'] as String?,
     );
   }
 
@@ -56,6 +81,11 @@ class HostResponse {
     'responseMessage': responseMessage,
     'traceNumber': traceNumber,
     'batchNumber': batchNumber,
+    'expressResponseCode': expressResponseCode,
+    'expressResponseMessage': expressResponseMessage,
+    'hostResponseCode': hostResponseCode,
+    'hostResponseMessage': hostResponseMessage,
+    'processorName': processorName,
   };
 }
 
