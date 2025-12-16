@@ -273,11 +273,11 @@ class StoreAndForwardConfiguration {
   final int unprocessedTotalAmountLimit;
 
   const StoreAndForwardConfiguration({
-    this.numberOfDaysToRetainProcessedTransactions = 1,
-    this.shouldTransactionsBeAutomaticallyForwarded = false,
+    this.numberOfDaysToRetainProcessedTransactions = 7,
+    this.shouldTransactionsBeAutomaticallyForwarded = true,
     this.storingTransactionsAllowed = true,
-    this.transactionAmountLimit = 50,
-    this.unprocessedTotalAmountLimit = 100,
+    this.transactionAmountLimit = 100,
+    this.unprocessedTotalAmountLimit = 1000,
   });
 
   Map<String, dynamic> toMap() => {

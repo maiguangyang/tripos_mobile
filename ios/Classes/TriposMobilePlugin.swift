@@ -560,19 +560,18 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin {
         // Note: Using deprecated isStoringTransactionsAllowed to match SwiftSampleApp behavior
         // transactionStoringMode may not work correctly on all SDK versions
         if let safConfig = args?["storeAndForwardConfiguration"] as? [String: Any] {
-            config.storeAndForwardConfiguration.isStoringTransactionsAllowed = safConfig["isEnabled"] as? Bool ?? true
-            config.storeAndForwardConfiguration.shouldTransactionsBeAutomaticallyForwarded = safConfig["autoForward"] as? Bool ?? true
-            // Add amount limits
-            config.storeAndForwardConfiguration.transactionAmountLimit = safConfig["transactionAmountLimit"] as? UInt ?? 50
-            config.storeAndForwardConfiguration.unprocessedTotalAmountLimit = safConfig["unprocessedTotalAmountLimit"] as? UInt ?? 100
-            config.storeAndForwardConfiguration.numberOfDaysToRetainProcessedTransactions = safConfig["numberOfDaysToRetainProcessedTransactions"] as? UInt ?? 1
+            config.storeAndForwardConfiguration.isStoringTransactionsAllowed = safConfig["storingTransactionsAllowed"] as? Bool ?? true
+            config.storeAndForwardConfiguration.shouldTransactionsBeAutomaticallyForwarded = safConfig["shouldTransactionsBeAutomaticallyForwarded"] as? Bool ?? true
+            config.storeAndForwardConfiguration.transactionAmountLimit = safConfig["transactionAmountLimit"] as? UInt ?? 100
+            config.storeAndForwardConfiguration.unprocessedTotalAmountLimit = safConfig["unprocessedTotalAmountLimit"] as? UInt ?? 1000
+            config.storeAndForwardConfiguration.numberOfDaysToRetainProcessedTransactions = safConfig["numberOfDaysToRetainProcessedTransactions"] as? UInt ?? 7
         } else {
-            // Default: Enable storing for offline mode (matching SwiftSampleApp)
+            // Default values matching Dart layer
             config.storeAndForwardConfiguration.isStoringTransactionsAllowed = true
             config.storeAndForwardConfiguration.shouldTransactionsBeAutomaticallyForwarded = true
-            config.storeAndForwardConfiguration.transactionAmountLimit = 50
-            config.storeAndForwardConfiguration.unprocessedTotalAmountLimit = 100
-            config.storeAndForwardConfiguration.numberOfDaysToRetainProcessedTransactions = 1
+            config.storeAndForwardConfiguration.transactionAmountLimit = 100
+            config.storeAndForwardConfiguration.unprocessedTotalAmountLimit = 1000
+            config.storeAndForwardConfiguration.numberOfDaysToRetainProcessedTransactions = 7
         }
         
         return config

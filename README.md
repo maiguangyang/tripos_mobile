@@ -20,11 +20,8 @@
 ### 1. 添加依赖
 
 在你的 `pubspec.yaml` 中添加：
-
-```yaml
-dependencies:
-  tripos_mobile:
-    path: ../tripos_mobile  # 本地路径，或使用 git
+```
+flutter pub add tripos_mobile
 ```
 
 ### 2. Android 配置
@@ -381,10 +378,10 @@ Store-and-Forward 离线交易配置。
 | 属性 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | `storingTransactionsAllowed` | `bool` | ❌ | `true` | 允许存储离线交易 |
-| `shouldTransactionsBeAutomaticallyForwarded` | `bool` | ❌ | `false` | 网络恢复后自动转发 |
-| `numberOfDaysToRetainProcessedTransactions` | `int` | ❌ | `1` | 已处理交易保留天数 |
-| `transactionAmountLimit` | `int` | ❌ | `50` | 单笔离线交易限额 |
-| `unprocessedTotalAmountLimit` | `int` | ❌ | `100` | 未处理交易总限额 |
+| `shouldTransactionsBeAutomaticallyForwarded` | `bool` | ❌ | `true` | 网络恢复后自动转发 |
+| `numberOfDaysToRetainProcessedTransactions` | `int` | ❌ | `7` | 已处理交易保留天数 |
+| `transactionAmountLimit` | `int` | ❌ | `100` | 单笔离线交易限额 |
+| `unprocessedTotalAmountLimit` | `int` | ❌ | `1000` | 未处理交易总限额 |
 
 ---
 

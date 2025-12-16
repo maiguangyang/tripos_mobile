@@ -800,15 +800,15 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             val safConfigMap = configMap["storeAndForwardConfiguration"] as? Map<*, *>
             val safConfig = StoreAndForwardConfiguration()
             safConfig.numberOfDaysToRetainProcessedTransactions = 
-                (safConfigMap?.get("numberOfDaysToRetainProcessedTransactions") as? Number)?.toInt() ?: 1
+                (safConfigMap?.get("numberOfDaysToRetainProcessedTransactions") as? Number)?.toInt() ?: 7
             safConfig.setShouldTransactionsBeAutomaticallyForwarded(
-                safConfigMap?.get("shouldTransactionsBeAutomaticallyForwarded") as? Boolean ?: false)
+                safConfigMap?.get("shouldTransactionsBeAutomaticallyForwarded") as? Boolean ?: true)
             safConfig.isStoringTransactionsAllowed = 
                 safConfigMap?.get("storingTransactionsAllowed") as? Boolean ?: true
             safConfig.transactionAmountLimit = 
-                (safConfigMap?.get("transactionAmountLimit") as? Number)?.toInt() ?: 50
+                (safConfigMap?.get("transactionAmountLimit") as? Number)?.toInt() ?: 100
             safConfig.unprocessedTotalAmountLimit = 
-                (safConfigMap?.get("unprocessedTotalAmountLimit") as? Number)?.toInt() ?: 100
+                (safConfigMap?.get("unprocessedTotalAmountLimit") as? Number)?.toInt() ?: 1000
             config.storeAndForwardConfiguration = safConfig
         }
         
