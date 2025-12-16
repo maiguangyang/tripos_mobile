@@ -1,7 +1,7 @@
 name: tripos_mobile
 description: "A new Flutter plugin project."
 version: 1.0.0
-homepage:
+homepage: https://github.com/maiguangyang/tripos_mobile
 
 environment:
   sdk: ^3.10.1
