@@ -56,6 +56,9 @@ android {
 }
 
 dependencies {
+    // 必须：AppCompat 主题支持（triPOS SDK 需要）
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    
     // triPOS SDK AAR - 插件已包含这些文件，通过 flatDir 仓库自动解析
     implementation(mapOf("name" to "triposmobilesdk-release", "ext" to "aar"))
     implementation(mapOf("name" to "rba_sdk", "ext" to "aar"))
@@ -68,6 +71,7 @@ dependencies {
 }
 ```
 
+
 > **💡 说明**
 > 
 > - AAR 文件已包含在插件的 `android/libs/` 目录中
@@ -76,13 +80,16 @@ dependencies {
 
 #### 2.2 修改 `android/app/src/main/AndroidManifest.xml`
 
-添加蓝牙权限：
+添加蓝牙权限和 `tools:replace` 配置：
+
+> ⚠️ **重要**：必须添加 `tools:replace="android:label"`，否则会出现 Manifest 合并冲突错误！
 
 ```xml
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!-- 👆 修改1：添加了 xmlns:tools -->
 
-    <!-- 蓝牙权限 -->
+    <!-- 修改2：蓝牙权限 -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
@@ -91,8 +98,9 @@ dependencies {
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
-        tools:replace="android:label"
-        ...>
+        tools:replace="android:label">
+        <!-- 👆 修改3：添加了 tools:replace="android:label" -->
+
     </application>
 </manifest>
 ```
