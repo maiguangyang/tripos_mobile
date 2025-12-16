@@ -24,6 +24,12 @@
 flutter pub add tripos_mobile
 ```
 
+添加 `permission_handler` 处理运行时权限
+
+```
+flutter pub add permission_handler
+```
+
 ### 2. Android 配置
 
 #### 2.1 修改 `android/app/build.gradle.kts`
@@ -101,14 +107,6 @@ dependencies {
     </application>
 </manifest>
 ```
-
-#### 2.3 (可选) 添加 `permission_handler` 处理运行时权限
-
-```yaml
-dependencies:
-  permission_handler: ^11.0.0
-```
-
 
 ---
 
@@ -267,7 +265,7 @@ if (response.isApproved) {
 | `cancelTransaction()` | 取消当前进行中的交易 | `Future<void>` |
 | `getDeviceInfo()` | 获取已连接设备信息 | `Future<DeviceInfo?>` |
 | `statusStream` | 交易状态实时更新 | `Stream<VtpStatus>` |
-| `deviceEventStream` | 设备连接事件 | `Stream<Map>` |
+| `deviceEventStream` | 设备连接事件 | `Stream<DeviceEvent>` |
 
 ---
 
@@ -577,18 +575,45 @@ tripos.statusStream.listen((status) {
 ### 监听设备连接事件
 
 ```dart
-// 监听设备连接
+// 监听设备连接（类型安全的枚举方式）
 tripos.deviceEventStream.listen((event) {
-  switch (event['event']) {
-    case 'connected':
-      print('设备已连接: ${event['model']}');
-    case 'disconnected':
+  switch (event.type) {
+    case DeviceEventType.connecting:
+      print('正在连接设备...');
+    case DeviceEventType.connected:
+      print('设备已连接: ${event.model}');
+    case DeviceEventType.disconnected:
       print('设备已断开');
-    case 'error':
-      print('设备错误: ${event['message']}');
+    case DeviceEventType.error:
+      print('设备错误: ${event.message}');
+    case DeviceEventType.ready:
+      print('设备已就绪');
+    case DeviceEventType.unknown:
+      break;
   }
 });
 ```
+
+**DeviceEventType 枚举值：**
+
+| 枚举值 | 说明 |
+|--------|------|
+| `connecting` | 正在连接设备 |
+| `connected` | 设备已连接 |
+| `disconnected` | 设备已断开 |
+| `error` | 设备发生错误 |
+| `ready` | 设备已就绪（可以进行交易） |
+| `unknown` | 未知事件类型 |
+
+**DeviceEvent 属性：**
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `type` | `DeviceEventType` | 事件类型枚举 |
+| `model` | `String?` | 设备型号 |
+| `serialNumber` | `String?` | 设备序列号 |
+| `firmwareVersion` | `String?` | 固件版本 |
+| `message` | `String?` | 错误信息 |
 
 ## 💡 完整示例
 

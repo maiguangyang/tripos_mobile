@@ -24,7 +24,7 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
   final deviceEventChannel = const EventChannel('tripos_mobile/device');
 
   Stream<VtpStatus>? _statusStream;
-  Stream<Map<String, dynamic>>? _deviceEventStream;
+  Stream<DeviceEvent>? _deviceEventStream;
 
   @override
   Future<String?> getPlatformVersion() async {
@@ -166,10 +166,11 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
   }
 
   @override
-  Stream<Map<String, dynamic>> get deviceEventStream {
+  Stream<DeviceEvent> get deviceEventStream {
     _deviceEventStream ??= deviceEventChannel.receiveBroadcastStream().map(
-      (event) =>
-          event is Map ? Map<String, dynamic>.from(event) : <String, dynamic>{},
+      (event) => event is Map
+          ? DeviceEvent.fromMap(Map<String, dynamic>.from(event))
+          : DeviceEvent(type: DeviceEventType.unknown),
     );
     return _deviceEventStream!;
   }

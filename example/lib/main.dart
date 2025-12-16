@@ -59,6 +59,7 @@ class _TriposHomePageState extends State<TriposHomePage> {
   String _sdkVersion = 'Unknown';
   bool _isInitialized = false;
   bool _isLoading = false;
+  bool _isConnecting = false; // 标记是否正在连接设备
   String _status = 'Not initialized';
   String _lastTransactionId = '';
   List<String> _devices = [];
@@ -66,7 +67,7 @@ class _TriposHomePageState extends State<TriposHomePage> {
   String _transactionResult = '';
 
   StreamSubscription<VtpStatus>? _statusSubscription;
-  StreamSubscription<Map<String, dynamic>>? _deviceEventSubscription;
+  StreamSubscription<DeviceEvent>? _deviceEventSubscription;
 
   // Configuration for scanning - use specific device type as SDK requires it
   TriposConfiguration get _configuration => TriposConfiguration(
@@ -177,20 +178,37 @@ class _TriposHomePageState extends State<TriposHomePage> {
     // Listen to status updates (使用 VtpStatus 枚举)
     _statusSubscription = _tripos.statusStream.listen((status) {
       setState(() {
+        // 正在连接时，忽略 VtpStatus.none，保持显示 "正在连接设备..."
+        if (_isConnecting && status == VtpStatus.none) {
+          return;
+        }
         _status = _formatVtpStatus(status);
       });
     });
 
-    // Listen to device events
+    // Listen to device events (now type-safe with DeviceEvent)
     _deviceEventSubscription = _tripos.deviceEventStream.listen((event) {
-      final eventType = event['event'] as String?;
-      if (eventType == 'connected') {
-        _showSnackBar('Device connected: ${event['model']}');
-      } else if (eventType == 'disconnected') {
-        _showSnackBar('Device disconnected');
-      } else if (eventType == 'error') {
-        _showSnackBar('Device error: ${event['message']}', isError: true);
-      }
+      setState(() {
+        switch (event.type) {
+          case DeviceEventType.connecting:
+            _status = '正在连接设备...';
+            _showSnackBar('Connecting to device...');
+          case DeviceEventType.connected:
+            _status = '设备已连接: ${event.model ?? "未知设备"}';
+            _showSnackBar('Device connected: ${event.model}');
+          case DeviceEventType.disconnected:
+            _status = '设备已断开';
+            _showSnackBar('Device disconnected');
+          case DeviceEventType.error:
+            _status = '设备错误';
+            _showSnackBar('Device error: ${event.message}', isError: true);
+          case DeviceEventType.ready:
+            _status = '设备就绪';
+            _showSnackBar('Device ready');
+          case DeviceEventType.unknown:
+            break;
+        }
+      });
     });
   }
 
@@ -475,7 +493,8 @@ class _TriposHomePageState extends State<TriposHomePage> {
 
     setState(() {
       _isLoading = true;
-      _status = 'Initializing SDK...';
+      _isConnecting = true; // 标记开始连接
+      _status = '正在连接设备...';
     });
 
     try {
@@ -483,7 +502,8 @@ class _TriposHomePageState extends State<TriposHomePage> {
       final success = await _tripos.initialize(_initConfiguration);
       setState(() {
         _isInitialized = success;
-        _status = success ? 'Initialized' : 'Initialization failed';
+        _isConnecting = false; // 连接结束
+        _status = success ? '设备已连接' : '连接失败';
       });
 
       if (success) {
@@ -494,7 +514,8 @@ class _TriposHomePageState extends State<TriposHomePage> {
     } catch (e) {
       _showSnackBar('Init error: $e', isError: true);
       setState(() {
-        _status = 'Init failed: $e';
+        _isConnecting = false; // 连接结束
+        _status = '连接失败: $e';
       });
     } finally {
       setState(() {

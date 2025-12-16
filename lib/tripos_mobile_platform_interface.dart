@@ -102,7 +102,7 @@ abstract class TriposMobilePlatform extends PlatformInterface {
   }
 
   /// Stream of device connection events
-  Stream<Map<String, dynamic>> get deviceEventStream {
+  Stream<DeviceEvent> get deviceEventStream {
     throw UnimplementedError('deviceEventStream has not been implemented.');
   }
 }

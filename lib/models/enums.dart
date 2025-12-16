@@ -447,3 +447,76 @@ enum CardType {
   /// EBT card
   ebt,
 }
+
+/// 设备事件类型枚举
+enum DeviceEventType {
+  /// 正在连接设备
+  connecting,
+
+  /// 设备已连接
+  connected,
+
+  /// 设备已断开
+  disconnected,
+
+  /// 设备发生错误
+  error,
+
+  /// 设备已就绪（可以进行交易）
+  ready,
+
+  /// 未知事件类型
+  unknown,
+}
+
+/// 设备事件数据模型
+class DeviceEvent {
+  /// 事件类型
+  final DeviceEventType type;
+
+  /// 设备型号（连接时可用）
+  final String? model;
+
+  /// 设备序列号（连接时可用）
+  final String? serialNumber;
+
+  /// 固件版本（连接时可用）
+  final String? firmwareVersion;
+
+  /// 错误信息（发生错误时可用）
+  final String? message;
+
+  /// 原始事件数据
+  final Map<String, dynamic> rawData;
+
+  const DeviceEvent({
+    required this.type,
+    this.model,
+    this.serialNumber,
+    this.firmwareVersion,
+    this.message,
+    this.rawData = const {},
+  });
+
+  /// 从原始 Map 创建 DeviceEvent
+  factory DeviceEvent.fromMap(Map<String, dynamic> map) {
+    final eventString = map['event'] as String? ?? 'unknown';
+    final type = DeviceEventType.values.firstWhere(
+      (e) => e.name == eventString,
+      orElse: () => DeviceEventType.unknown,
+    );
+
+    return DeviceEvent(
+      type: type,
+      model: map['model'] as String?,
+      serialNumber: map['serialNumber'] as String?,
+      firmwareVersion: map['firmwareVersion'] as String?,
+      message: map['message'] as String?,
+      rawData: map,
+    );
+  }
+
+  @override
+  String toString() =>
+      'DeviceEvent(type: $type, model: $model, message: $message)';
+}

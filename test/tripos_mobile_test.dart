@@ -80,7 +80,7 @@ class MockTriposMobilePlatform
   Stream<VtpStatus> get statusStream => Stream.empty();
 
   @override
-  Stream<Map<String, dynamic>> get deviceEventStream => Stream.empty();
+  Stream<DeviceEvent> get deviceEventStream => Stream.empty();
 }
 
 void main() {

@@ -146,7 +146,7 @@ class TriposMobile {
   /// Stream of device connection events
   ///
   /// Listen to this stream to receive device connection/disconnection events.
-  Stream<Map<String, dynamic>> get deviceEventStream {
+  Stream<DeviceEvent> get deviceEventStream {
     return TriposMobilePlatform.instance.deviceEventStream;
   }
 }
