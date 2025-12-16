@@ -86,7 +86,42 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin {
     // MARK: - Bluetooth Scanning
     private var scanTimeoutTimer: Timer?
     
+    /// Check if required Bluetooth permission key exists in Info.plist
+    private func hasBluetoothPermissionKey() -> Bool {
+        // Check for either key that allows Bluetooth usage
+        let hasAlwaysKey = Bundle.main.object(forInfoDictionaryKey: "NSBluetoothAlwaysUsageDescription") != nil
+        let hasPeripheralKey = Bundle.main.object(forInfoDictionaryKey: "NSBluetoothPeripheralUsageDescription") != nil
+        return hasAlwaysKey || hasPeripheralKey
+    }
+    
     private func scanBluetoothDevices(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        // CRITICAL: Check if Info.plist has Bluetooth permission key BEFORE any SDK calls
+        // If missing, iOS will crash the app when any CoreBluetooth API is accessed
+        if !hasBluetoothPermissionKey() {
+            result(FlutterError(
+                code: "BLUETOOTH_PERMISSION_NOT_CONFIGURED",
+                message: "Bluetooth permission not configured in Info.plist",
+                details: "Add NSBluetoothAlwaysUsageDescription key to your app's Info.plist file with a usage description string."
+            ))
+            return
+        }
+        
+        // Store result for callback first
+        pendingScanResult = result
+        
+        // Set a 10 second timeout for scanning
+        scanTimeoutTimer?.invalidate()
+        scanTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
+            guard let self = self, let pendingResult = self.pendingScanResult else { return }
+            self.pendingScanResult = nil
+            // Cleanup SDK state on timeout to allow rescan
+            try? self.vtp?.deinitialize()
+            self.isDeviceReady = false
+            DispatchQueue.main.async {
+                pendingResult([])  // Return empty array on timeout
+            }
+        }
+        
         do {
             let config = buildConfiguration(from: call.arguments as? [String: Any])
             vtpConfiguration = config
@@ -101,26 +136,11 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin {
             
             vtp?.add(self)
             
-            // Store result for callback
-            pendingScanResult = result
-            
-            // Set a 10 second timeout for scanning
-            scanTimeoutTimer?.invalidate()
-            scanTimeoutTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
-                guard let self = self, let pendingResult = self.pendingScanResult else { return }
-                self.pendingScanResult = nil
-                // Cleanup SDK state on timeout to allow rescan
-                try? self.vtp?.deinitialize()
-                self.isDeviceReady = false
-                DispatchQueue.main.async {
-                    pendingResult([])  // Return empty array on timeout
-                }
-            }
-            
             try vtp?.scanForDevices(with: config)
             
         } catch {
             scanTimeoutTimer?.invalidate()
+            pendingScanResult = nil
             result(FlutterError(code: "SCAN_ERROR", message: error.localizedDescription, details: nil))
         }
     }
