@@ -93,7 +93,42 @@ class _TriposHomePageState extends State<TriposHomePage> {
     ),
   );
 
-  // Configuration for initialization (with specific device type)
+  /// Auto-detect device type based on device name
+  DeviceType _detectDeviceType(String? deviceName) {
+    if (deviceName == null || deviceName.isEmpty) {
+      return DeviceType.ingenicoMoby5500; // Default fallback
+    }
+    final lower = deviceName.toLowerCase();
+    if (lower.contains('mob55') ||
+        lower.contains('moby55') ||
+        lower.contains('5500')) {
+      return DeviceType.ingenicoMoby5500;
+    }
+    if (lower.contains('mob85') ||
+        lower.contains('moby85') ||
+        lower.contains('8500')) {
+      return DeviceType.ingenicoMoby8500;
+    }
+    if (lower.contains('lane3') || lower.contains('3000')) {
+      return DeviceType.lane3000;
+    }
+    if (lower.contains('lane5')) {
+      return DeviceType.lane5000;
+    }
+    if (lower.contains('lane7')) {
+      return DeviceType.lane7000;
+    }
+    if (lower.contains('lane8')) {
+      return DeviceType.lane8000;
+    }
+    if (lower.contains('chipper') || lower.contains('bbpos')) {
+      return DeviceType.bbposChipper2XBT;
+    }
+    // Default to Moby5500 if no match
+    return DeviceType.ingenicoMoby5500;
+  }
+
+  // Configuration for initialization (auto-detects device type from name)
   TriposConfiguration get _initConfiguration => TriposConfiguration(
     hostConfiguration: const HostConfiguration(
       acceptorId: acceptorId,
@@ -104,8 +139,8 @@ class _TriposHomePageState extends State<TriposHomePage> {
       applicationVersion: '1.0.0',
     ),
     deviceConfiguration: DeviceConfiguration(
-      // Use Moby5500 for initialization
-      deviceType: DeviceType.ingenicoMoby5500,
+      // Auto-detect device type based on selected device name
+      deviceType: _detectDeviceType(_selectedDevice),
       identifier: _selectedDevice,
       terminalId: '1234',
       contactlessAllowed: true,
