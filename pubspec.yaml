@@ -1,10 +1,10 @@
 name: tripos_mobile
 description: "Flutter plugin for Worldpay triPOS Mobile SDK. Supports payment processing via Ingenico Bluetooth devices (Moby 5500/8500) on Android and iOS."
-version: 1.0.3
+version: 1.0.4
 homepage: https://github.com/maiguangyang/tripos_mobile
 
 environment:
-  sdk: ^3.9.2
+  sdk: ^3.8.1
   flutter: '>=3.3.0'
 
 dependencies:
