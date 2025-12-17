@@ -4,7 +4,7 @@ version: 1.0.2
 homepage: https://github.com/maiguangyang/tripos_mobile
 
 environment:
-  sdk: ^3.10.1
+  sdk: ^3.9.2
   flutter: '>=3.3.0'
 
 dependencies:
