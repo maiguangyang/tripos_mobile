@@ -823,12 +823,24 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin {
     
     private func mapTransactionStatus(_ status: VTPTransactionStatus) -> String {
         switch status {
+        case VTPTransactionStatusUnknown:
+            return "unknown"
         case VTPTransactionStatusApproved:
             return "approved"
-        case VTPTransactionStatusDeclined:
-            return "declined"
         case VTPTransactionStatusPartiallyApproved:
             return "partiallyApproved"
+        case VTPTransactionStatusApprovedExceptCashback:
+            return "approvedExceptCashback"
+        case VTPTransactionStatusApprovedByMerchant:
+            return "approvedByMerchant"
+        case VTPTransactionStatusCallIssuer:
+            return "callIssuer"
+        case VTPTransactionStatusDeclined:
+            return "declined"
+        case VTPTransactionStatusNeedsToBeReversed:
+            return "needsToBeReversed"
+        case VTPDccRequested:
+            return "dccRequested"
         default:
             return "unknown"
         }

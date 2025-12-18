@@ -51,10 +51,9 @@ class _TriposHomePageState extends State<TriposHomePage> {
   static const applicationMode = ApplicationMode.production;
 
   // Test credentials
-  static const acceptorId = '4445067657403';
-  static const accountId = '1401521';
-  static const token =
-      'DB2180A53160AEF166D3912DD23E9993C267C1D8BD3C4EE8AFA8D25D6C609A518FB2FE01';
+  static const acceptorId = 'xxxx';
+  static const accountId = 'xxxx';
+  static const token = 'xxxx';
 
   String _sdkVersion = 'Unknown';
   bool _isInitialized = false;

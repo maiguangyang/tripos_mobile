@@ -2,6 +2,15 @@
 
 import 'enums.dart';
 
+/// 判断交易状态是否为批准状态
+/// 根据 SDK 的 VTPTransactionStatusUtility.isTransactionStatusApproved 逻辑
+bool _isStatusApproved(TransactionStatus status) {
+  return status == TransactionStatus.approved ||
+      status == TransactionStatus.partiallyApproved ||
+      status == TransactionStatus.approvedExceptCashback ||
+      status == TransactionStatus.approvedByMerchant;
+}
+
 /// Host response information
 class HostResponse {
   /// Transaction ID from host
@@ -287,9 +296,7 @@ class SaleResponse extends TransactionResponse {
       map['transactionStatus'] as String?,
     );
     return SaleResponse(
-      isApproved:
-          transactionStatus == TransactionStatus.approved ||
-          transactionStatus == TransactionStatus.approvedByMerchant,
+      isApproved: _isStatusApproved(transactionStatus),
       transactionStatus: transactionStatus,
       approvedAmount: (map['approvedAmount'] as num?)?.toDouble(),
       host: HostResponse.fromMap(_toStringDynamicMap(map['host'])),
@@ -346,9 +353,7 @@ class RefundResponse extends TransactionResponse {
       map['transactionStatus'] as String?,
     );
     return RefundResponse(
-      isApproved:
-          transactionStatus == TransactionStatus.approved ||
-          transactionStatus == TransactionStatus.approvedByMerchant,
+      isApproved: _isStatusApproved(transactionStatus),
       transactionStatus: transactionStatus,
       approvedAmount: (map['approvedAmount'] as num?)?.toDouble(),
       host: HostResponse.fromMap(_toStringDynamicMap(map['host'])),
@@ -390,9 +395,7 @@ class VoidResponse extends TransactionResponse {
       map['transactionStatus'] as String?,
     );
     return VoidResponse(
-      isApproved:
-          transactionStatus == TransactionStatus.approved ||
-          transactionStatus == TransactionStatus.approvedByMerchant,
+      isApproved: _isStatusApproved(transactionStatus),
       transactionStatus: transactionStatus,
       approvedAmount: (map['approvedAmount'] as num?)?.toDouble(),
       host: HostResponse.fromMap(_toStringDynamicMap(map['host'])),
@@ -434,9 +437,7 @@ class AuthorizationResponse extends TransactionResponse {
       map['transactionStatus'] as String?,
     );
     return AuthorizationResponse(
-      isApproved:
-          transactionStatus == TransactionStatus.approved ||
-          transactionStatus == TransactionStatus.approvedByMerchant,
+      isApproved: _isStatusApproved(transactionStatus),
       transactionStatus: transactionStatus,
       approvedAmount: (map['approvedAmount'] as num?)?.toDouble(),
       host: HostResponse.fromMap(_toStringDynamicMap(map['host'])),

@@ -1,8 +1,8 @@
-/// Enums for triPOS Mobile SDK
+/// triPOS Mobile SDK 枚举定义
 
-/// Device type enumeration
+/// 设备类型枚举
 enum DeviceType {
-  /// Null device (no physical device)
+  /// 无设备（无物理设备）
   none,
 
   /// BBPOS Chipper 2X BT
@@ -27,103 +27,115 @@ enum DeviceType {
   lane8000,
 }
 
-/// Application mode (environment)
+/// 应用模式（环境）
 enum ApplicationMode {
-  /// Production environment
+  /// 生产环境
   production,
 
-  /// Test/Certification environment
+  /// 测试/认证环境
   testCertification,
 }
 
-/// Currency code
+/// 货币代码
 enum CurrencyCode {
-  /// US Dollar
+  /// 美元
   usd,
 
-  /// Canadian Dollar
+  /// 加元
   cad,
 }
 
-/// Cardholder present code
+/// 持卡人在场代码
 enum CardHolderPresentCode {
-  /// Cardholder is present
+  /// 持卡人在场
   present,
 
-  /// Cardholder is not present
+  /// 持卡人不在场
   notPresent,
 
-  /// Mail order
+  /// 邮购订单
   mailOrder,
 
-  /// Telephone order
+  /// 电话订单
   telephoneOrder,
 
-  /// Ecommerce
+  /// 电子商务
   ecommerce,
 }
 
-/// Terminal type
+/// 终端类型
 enum TerminalType {
-  /// Point of sale
+  /// 销售点
   pointOfSale,
 
-  /// Mobile
+  /// 移动终端
   mobile,
 
-  /// Ecommerce
+  /// 电子商务
   ecommerce,
 
-  /// MOTO
+  /// 邮购/电话订单
   moto,
 }
 
-/// Gift program type
+/// 礼品卡程序类型
 enum GiftProgramType {
-  /// Gift
+  /// 礼品卡
   gift,
 
-  /// Loyalty
+  /// 会员卡
   loyalty,
 }
 
-/// Market code
+/// 市场代码
 enum MarketCode {
-  /// Retail
+  /// 零售
   retail,
 
-  /// Restaurant
+  /// 餐饮
   restaurant,
 
-  /// Hotel/Lodging
+  /// 酒店/住宿
   hotelLodging,
 
-  /// Auto rental
+  /// 汽车租赁
   autoRental,
 }
 
-/// Transaction status from SDK
+/// 交易状态（匹配 VTPTransactionStatus）
 enum TransactionStatus {
-  /// Approved (online)
+  /// 未知状态
+  unknown,
+
+  /// 已批准（在线）
   approved,
 
-  /// Approved by merchant (offline/Store-and-Forward)
+  /// 部分批准
+  partiallyApproved,
+
+  /// 已批准（现金返还除外）
+  approvedExceptCashback,
+
+  /// 商户批准（离线/Store-and-Forward）
   approvedByMerchant,
 
-  /// Declined
+  /// 需联系发卡行
+  callIssuer,
+
+  /// 已拒绝
   declined,
 
-  /// Error
+  /// 需要撤销
+  needsToBeReversed,
+
+  /// DCC 请求（动态货币转换）
+  dccRequested,
+
+  /// 错误（插件特有，非 SDK）
   error,
-
-  /// Duplicate
-  duplicate,
-
-  /// Partial approval
-  partialApproval,
 }
 
-/// Payment processor
+/// 支付处理器
 enum PaymentProcessor {
   /// Worldpay
   worldpay,
@@ -394,57 +406,57 @@ enum VtpStatus {
   cashbackUnsupportedCard,
 }
 
-/// Address verification condition
+/// 地址验证条件
 enum AddressVerificationCondition {
-  /// Keyed entries only
+  /// 仅手动输入时
   keyed,
 
-  /// Always verify
+  /// 始终验证
   always,
 
-  /// Never verify
+  /// 从不验证
   never,
 }
 
-/// Tip selection type
+/// 小费选择类型
 enum TipSelectionType {
-  /// Amount-based tips
+  /// 按金额
   amount,
 
-  /// Percentage-based tips
+  /// 按百分比
   percentage,
 }
 
-/// Entry mode for card input
+/// 卡片输入方式
 enum EntryMode {
-  /// Magnetic stripe
+  /// 磁条刷卡
   magStripe,
 
-  /// Contact EMV
+  /// 接触式 EMV 芯片
   contactEmv,
 
-  /// Contactless EMV
+  /// 非接触式 EMV 芯片
   contactlessEmv,
 
-  /// Keyed entry
+  /// 手动输入
   keyed,
 
-  /// Barcode
+  /// 条形码
   barcode,
 }
 
-/// Card type
+/// 卡类型
 enum CardType {
-  /// Credit card
+  /// 信用卡
   credit,
 
-  /// Debit card
+  /// 借记卡
   debit,
 
-  /// Gift card
+  /// 礼品卡
   gift,
 
-  /// EBT card
+  /// EBT 卡
   ebt,
 }
 
