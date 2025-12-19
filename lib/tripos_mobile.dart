@@ -8,12 +8,14 @@ export 'models/configuration.dart';
 export 'models/enums.dart';
 export 'models/requests.dart';
 export 'models/responses.dart';
+export 'models/stored_transaction.dart';
 export 'tripos_mobile_platform_interface.dart';
 
 import 'models/configuration.dart';
 import 'models/enums.dart';
 import 'models/requests.dart';
 import 'models/responses.dart';
+import 'models/stored_transaction.dart';
 import 'tripos_mobile_platform_interface.dart';
 
 /// Main triPOS Mobile SDK plugin class
@@ -148,5 +150,50 @@ class TriposMobile {
   /// Listen to this stream to receive device connection/disconnection events.
   Stream<DeviceEvent> get deviceEventStream {
     return TriposMobilePlatform.instance.deviceEventStream;
+  }
+
+  // ==================== Store-and-Forward Methods ====================
+
+  /// 获取所有离线存储交易
+  ///
+  /// 返回所有存储在本地的离线交易记录。
+  Future<List<StoredTransactionRecord>> getStoredTransactions() {
+    return TriposMobilePlatform.instance.getStoredTransactions();
+  }
+
+  /// 按 tpId 获取单个离线交易
+  ///
+  /// [tpId] - 交易 ID
+  /// 返回匹配的交易记录，如果未找到则返回 null。
+  Future<StoredTransactionRecord?> getStoredTransactionByTpId(String tpId) {
+    return TriposMobilePlatform.instance.getStoredTransactionByTpId(tpId);
+  }
+
+  /// 按状态获取离线交易列表
+  ///
+  /// [state] - 交易状态（如 stored, processing, processed 等）
+  /// 返回符合状态的交易列表。
+  Future<List<StoredTransactionRecord>> getStoredTransactionsByState(
+    StoredTransactionState state,
+  ) {
+    return TriposMobilePlatform.instance.getStoredTransactionsByState(state);
+  }
+
+  /// 手动转发离线交易
+  ///
+  /// [request] - 转发请求（包含 tpId 等信息）
+  /// 将存储的离线交易转发到 Worldpay 进行处理。
+  Future<ForwardTransactionResponse> forwardTransaction(
+    ForwardTransactionRequest request,
+  ) {
+    return TriposMobilePlatform.instance.forwardTransaction(request);
+  }
+
+  /// 删除离线存储交易
+  ///
+  /// [tpId] - 要删除的交易 ID
+  /// 返回是否删除成功。
+  Future<bool> deleteStoredTransaction(String tpId) {
+    return TriposMobilePlatform.instance.deleteStoredTransaction(tpId);
   }
 }

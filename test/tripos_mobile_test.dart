@@ -81,6 +81,28 @@ class MockTriposMobilePlatform
 
   @override
   Stream<DeviceEvent> get deviceEventStream => Stream.empty();
+
+  // Store-and-Forward mock implementations
+  @override
+  Future<List<StoredTransactionRecord>> getStoredTransactions() =>
+      Future.value([]);
+
+  @override
+  Future<StoredTransactionRecord?> getStoredTransactionByTpId(String tpId) =>
+      Future.value(null);
+
+  @override
+  Future<List<StoredTransactionRecord>> getStoredTransactionsByState(
+    StoredTransactionState state,
+  ) => Future.value([]);
+
+  @override
+  Future<ForwardTransactionResponse> forwardTransaction(
+    ForwardTransactionRequest request,
+  ) => Future.value(const ForwardTransactionResponse(isApproved: true));
+
+  @override
+  Future<bool> deleteStoredTransaction(String tpId) => Future.value(true);
 }
 
 void main() {

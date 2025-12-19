@@ -7,6 +7,7 @@ import 'models/configuration.dart';
 import 'models/enums.dart';
 import 'models/requests.dart';
 import 'models/responses.dart';
+import 'models/stored_transaction.dart';
 import 'tripos_mobile_platform_interface.dart';
 
 /// Method channel implementation of [TriposMobilePlatform]
@@ -173,5 +174,80 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
           : DeviceEvent(type: DeviceEventType.unknown),
     );
     return _deviceEventStream!;
+  }
+
+  // ==================== Store-and-Forward Methods ====================
+
+  @override
+  Future<List<StoredTransactionRecord>> getStoredTransactions() async {
+    final result = await methodChannel.invokeMethod<List<dynamic>>(
+      'getStoredTransactions',
+    );
+    if (result == null) return [];
+    return result
+        .map(
+          (e) => StoredTransactionRecord.fromMap(
+            Map<String, dynamic>.from(e as Map),
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<StoredTransactionRecord?> getStoredTransactionByTpId(
+    String tpId,
+  ) async {
+    final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'getStoredTransactionByTpId',
+      {'tpId': tpId},
+    );
+    if (result == null) return null;
+    return StoredTransactionRecord.fromMap(Map<String, dynamic>.from(result));
+  }
+
+  @override
+  Future<List<StoredTransactionRecord>> getStoredTransactionsByState(
+    StoredTransactionState state,
+  ) async {
+    final result = await methodChannel.invokeMethod<List<dynamic>>(
+      'getStoredTransactionsByState',
+      {'state': state.name},
+    );
+    if (result == null) return [];
+    return result
+        .map(
+          (e) => StoredTransactionRecord.fromMap(
+            Map<String, dynamic>.from(e as Map),
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<ForwardTransactionResponse> forwardTransaction(
+    ForwardTransactionRequest request,
+  ) async {
+    final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'forwardTransaction',
+      request.toMap(),
+    );
+    if (result == null) {
+      return const ForwardTransactionResponse(
+        isApproved: false,
+        errorMessage: 'No response from SDK',
+      );
+    }
+    return ForwardTransactionResponse.fromMap(
+      Map<String, dynamic>.from(result),
+    );
+  }
+
+  @override
+  Future<bool> deleteStoredTransaction(String tpId) async {
+    final result = await methodChannel.invokeMethod<bool>(
+      'deleteStoredTransaction',
+      {'tpId': tpId},
+    );
+    return result ?? false;
   }
 }

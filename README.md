@@ -613,6 +613,75 @@ tripos.deviceEventStream.listen((event) {
 | `firmwareVersion` | `String?` | 固件版本 |
 | `message` | `String?` | 错误信息 |
 
+---
+
+## 📦 离线交易管理 (Store-and-Forward)
+
+当网络不可用时，SDK 会将交易存储在本地，等待网络恢复后转发到服务器。
+
+### API 方法
+
+| 方法 | 说明 |
+|------|------|
+| `getStoredTransactions()` | 获取所有离线存储交易 |
+| `getStoredTransactionByTpId(tpId)` | 按 tpId 获取单个交易 |
+| `getStoredTransactionsByState(state)` | 按状态筛选交易 |
+| `forwardTransaction(request)` | 手动转发离线交易 |
+| `deleteStoredTransaction(tpId)` | 删除已存储交易 |
+
+### StoredTransactionState 枚举
+
+| 枚举值 | 说明 |
+|--------|------|
+| `stored` | 已存储，等待转发 |
+| `storedPendingGenac2` | 已存储，等待 EMV GENAC2 确认 |
+| `processing` | 正在处理/转发中 |
+| `processed` | 已处理完成 |
+| `deleted` | 已删除 |
+
+### 使用示例
+
+```dart
+final tripos = TriposMobile();
+
+// 1. 查询所有离线交易
+final transactions = await tripos.getStoredTransactions();
+for (final tx in transactions) {
+  print('ID: ${tx.tpId}, 金额: ${tx.totalAmount}, 状态: ${tx.state}');
+}
+
+// 2. 按状态筛选
+final pendingTx = await tripos.getStoredTransactionsByState(
+  StoredTransactionState.stored
+);
+
+// 3. 手动转发离线交易
+if (pendingTx.isNotEmpty) {
+  final response = await tripos.forwardTransaction(
+    ForwardTransactionRequest(tpId: pendingTx.first.tpId!),
+  );
+  
+  if (response.isApproved) {
+    print('交易转发成功！ID: ${response.transactionId}');
+  } else {
+    print('转发失败: ${response.errorMessage}');
+  }
+}
+
+// 4. 删除离线交易
+await tripos.deleteStoredTransaction('xxx-xxx-xxx');
+```
+
+### 离线交易流程
+
+1. **离线交易** - 当网络不可用时，交易返回 `TransactionStatus.approvedByMerchant`
+2. **保存 tpId** - 从 `SaleResponse.tpId` 获取交易 ID
+3. **查询状态** - 使用 `getStoredTransactions()` 查询离线交易
+4. **网络恢复** - 自动或手动调用 `forwardTransaction()` 转发
+5. **确认结果** - 检查 `ForwardTransactionResponse.isApproved`
+
+---
+
 ## 💡 完整示例
 
 查看 [example/lib/main.dart](example/lib/main.dart) 获取完整的示例应用。
@@ -620,6 +689,7 @@ tripos.deviceEventStream.listen((event) {
 示例应用包含：
 - 设备扫描和连接界面
 - 销售、退款、作废操作
+- **离线交易管理页面** - 点击 AppBar 的存储图标进入
 - 交易结果展示
 - 错误处理
 

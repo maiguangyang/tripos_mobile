@@ -78,6 +78,22 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin {
         case "getDeviceInfo":
             getDeviceInfo(result: result)
             
+        // Store-and-Forward methods
+        case "getStoredTransactions":
+            getStoredTransactions(result: result)
+            
+        case "getStoredTransactionByTpId":
+            getStoredTransactionByTpId(call: call, result: result)
+            
+        case "getStoredTransactionsByState":
+            getStoredTransactionsByState(call: call, result: result)
+            
+        case "forwardTransaction":
+            forwardTransaction(call: call, result: result)
+            
+        case "deleteStoredTransaction":
+            deleteStoredTransaction(call: call, result: result)
+            
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -1158,6 +1174,186 @@ extension TriposMobilePlugin: VTPDeviceInteractionDelegate {
     
     public func onRemoveCard() {
         sendDeviceEvent(["event": "removeCard"])
+    }
+    
+    // MARK: - Store-and-Forward Methods
+    
+    private func getStoredTransactions(result: @escaping FlutterResult) {
+        guard let vtp = self.vtp else {
+            result([])
+            return
+        }
+        
+        do {
+            let records = try vtp.getAllStoredTransactions()
+            let mapped = records.map { mapStoredTransactionRecord($0) }
+            result(mapped)
+        } catch {
+            result(FlutterError(code: "S&F_ERROR", message: error.localizedDescription, details: nil))
+        }
+    }
+    
+    private func getStoredTransactionByTpId(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let vtp = self.vtp,
+              let args = call.arguments as? [String: Any],
+              let tpId = args["tpId"] as? String else {
+            result(nil)
+            return
+        }
+        
+        do {
+            let record = try vtp.getStoredTransaction(byTpId: tpId)
+            result(mapStoredTransactionRecord(record))
+        } catch {
+            result(FlutterError(code: "S&F_ERROR", message: error.localizedDescription, details: nil))
+        }
+    }
+    
+    private func getStoredTransactionsByState(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let vtp = self.vtp,
+              let args = call.arguments as? [String: Any],
+              let stateName = args["state"] as? String else {
+            result([])
+            return
+        }
+        
+        let state = mapStringToStoredTransactionState(stateName)
+        
+        do {
+            let records = try vtp.getStoredTransactions(with: state)
+            let mapped = records.map { mapStoredTransactionRecord($0) }
+            result(mapped)
+        } catch {
+            result(FlutterError(code: "S&F_ERROR", message: error.localizedDescription, details: nil))
+        }
+    }
+    
+    private func forwardTransaction(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let vtp = self.vtp,
+              let args = call.arguments as? [String: Any],
+              let tpId = args["tpId"] as? String else {
+            result(["isApproved": false, "errorMessage": "Missing tpId"])
+            return
+        }
+        
+        let request = VTPManuallyForwardRequest()
+        request.tpId = tpId
+        
+        if let transactionAmount = args["transactionAmount"] as? Double {
+            request.transactionAmount = NSDecimalNumber(value: transactionAmount)
+        }
+        if let salesTaxAmount = args["salesTaxAmount"] as? Double {
+            request.salesTaxAmount = NSDecimalNumber(value: salesTaxAmount)
+        }
+        if let convenienceFeeAmount = args["convenienceFeeAmount"] as? Double {
+            request.convenienceFeeAmount = NSDecimalNumber(value: convenienceFeeAmount)
+        }
+        
+        vtp.forwardTransaction(request) { response in
+            // Check if transaction was approved based on transactionStatus
+            let isApproved = response?.transactionStatus == VTPTransactionStatusApproved
+            let map: [String: Any?] = [
+                "isApproved": isApproved,
+                "transactionId": response?.transactionId ?? tpId,
+                "referenceNumber": nil,
+                "wasProcessedOnline": true,
+                "transactionStatus": isApproved ? "approved" : "declined"
+            ]
+            result(map)
+        } errorHandler: { error in
+            result(["isApproved": false, "errorMessage": error?.localizedDescription ?? "Forward failed"])
+        }
+    }
+    
+    private func deleteStoredTransaction(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let vtp = self.vtp,
+              let args = call.arguments as? [String: Any],
+              let tpId = args["tpId"] as? String else {
+            result(false)
+            return
+        }
+        
+        do {
+            var error: NSError?
+            vtp.deleteStoredTransaction(withStateStored: tpId, error: &error)
+            if let error = error {
+                print("Delete stored transaction error: \(error.localizedDescription)")
+                result(false)
+            } else {
+                result(true)
+            }
+        } catch {
+            print("Delete stored transaction exception: \(error.localizedDescription)")
+            result(false)
+        }
+    }
+    
+    private func mapStoredTransactionRecord(_ record: VTPStoreTransactionRecord) -> [String: Any?] {
+        // totalAmount could be NSDecimalNumber or String depending on SDK version
+        var totalAmountDouble: Double? = nil
+        if let decimalAmount = record.totalAmount as? NSDecimalNumber {
+            totalAmountDouble = decimalAmount.doubleValue
+        } else if let stringAmount = record.totalAmount as? String {
+            totalAmountDouble = Double(stringAmount)
+        }
+        
+        return [
+            "tpId": record.tpId,
+            "state": mapStoredTransactionState(record.state),
+            "totalAmount": totalAmountDouble,
+            "createdOn": nil,
+            "transactionType": nil,
+            "lastFourDigits": nil,
+            "accountNumber": nil,
+            "cardHolderName": nil,
+            "cardLogo": nil,
+            "expirationDate": nil,
+            "binValue": nil,
+            "applicationLabel": nil,
+            "entryMode": nil,
+            "deviceSerialNumber": nil,
+            "clerkId": nil,
+            "terminalId": nil,
+            "laneId": nil,
+            "invoiceNumber": nil,
+            "referenceNumber": nil,
+            "approvalCode": nil,
+            "transactionId": nil
+        ]
+    }
+    
+    private func mapStoredTransactionState(_ state: VTPStoreTransactionState) -> String {
+        switch state {
+        case VTPStoreTransactionStateStored:
+            return "stored"
+        case VTPStoreTransactionStateStoredPendingGenac2:
+            return "storedPendingGenac2"
+        case VTPStoreTransactionStateProcessing:
+            return "processing"
+        case VTPStoreTransactionStateProcessed:
+            return "processed"
+        case VTPStoreTransactionStateDeleted:
+            return "deleted"
+        default:
+            return "stored"
+        }
+    }
+    
+    private func mapStringToStoredTransactionState(_ stateName: String) -> VTPStoreTransactionState {
+        switch stateName.lowercased() {
+        case "stored":
+            return VTPStoreTransactionStateStored
+        case "storedpendinggenac2":
+            return VTPStoreTransactionStateStoredPendingGenac2
+        case "processing":
+            return VTPStoreTransactionStateProcessing
+        case "processed":
+            return VTPStoreTransactionStateProcessed
+        case "deleted":
+            return VTPStoreTransactionStateDeleted
+        default:
+            return VTPStoreTransactionStateStored
+        }
     }
 }
 

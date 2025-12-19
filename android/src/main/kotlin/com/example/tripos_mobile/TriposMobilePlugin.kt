@@ -80,6 +80,12 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "processAuthorization" -> processAuthorization(call, result)
             "cancelTransaction" -> cancelTransaction(result)
             "getDeviceInfo" -> getDeviceInfo(result)
+            // Store-and-Forward methods
+            "getStoredTransactions" -> getStoredTransactions(result)
+            "getStoredTransactionByTpId" -> getStoredTransactionByTpId(call, result)
+            "getStoredTransactionsByState" -> getStoredTransactionsByState(call, result)
+            "forwardTransaction" -> forwardTransaction(call, result)
+            "deleteStoredTransaction" -> deleteStoredTransaction(call, result)
             else -> result.notImplemented()
         }
     }
@@ -1178,5 +1184,192 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     override fun onDetachedFromActivity() {
         activity = null
+    }
+
+    // ==================== Store-and-Forward Methods ====================
+
+    private fun getStoredTransactions(result: Result) {
+        try {
+            val records = vtp.allStoredTransactions ?: emptyList()
+            val mapped = records.map { mapStoredTransactionRecord(it) }
+            result.success(mapped)
+        } catch (e: Exception) {
+            Log.e(TAG, "getStoredTransactions error: ${e.message}")
+            result.success(emptyList<Map<String, Any?>>())
+        }
+    }
+
+    private fun getStoredTransactionByTpId(call: MethodCall, result: Result) {
+        val tpId = call.argument<String>("tpId")
+        if (tpId == null) {
+            result.success(null)
+            return
+        }
+
+        try {
+            val record = vtp.getStoredTransactionByTpId(tpId)
+            if (record != null) {
+                result.success(mapStoredTransactionRecord(record))
+            } else {
+                result.success(null)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "getStoredTransactionByTpId error: ${e.message}")
+            result.success(null)
+        }
+    }
+
+    private fun getStoredTransactionsByState(call: MethodCall, result: Result) {
+        val stateName = call.argument<String>("state")
+        if (stateName == null) {
+            result.success(emptyList<Map<String, Any?>>())
+            return
+        }
+
+        try {
+            val state = mapStringToStoredTransactionState(stateName)
+            val records = vtp.getStoredTransactionsWithState(state) ?: emptyList()
+            val mapped = records.map { mapStoredTransactionRecord(it) }
+            result.success(mapped)
+        } catch (e: Exception) {
+            Log.e(TAG, "getStoredTransactionsByState error: ${e.message}")
+            result.success(emptyList<Map<String, Any?>>())
+        }
+    }
+
+    private fun forwardTransaction(call: MethodCall, result: Result) {
+        val tpId = call.argument<String>("tpId")
+        if (tpId == null) {
+            result.success(mapOf("isApproved" to false, "errorMessage" to "Missing tpId"))
+            return
+        }
+
+        try {
+            val request = com.vantiv.triposmobilesdk.requests.ManuallyForwardRequest()
+            request.tpId = tpId
+
+            // Note: ManuallyForwardRequest may not have these properties in all SDK versions
+            // Only set tpId which is the required field
+
+            vtp.processManuallyForwardRequest(request, object : com.vantiv.triposmobilesdk.ManuallyForwardRequestListener {
+                override fun onManuallyForwardRequestCompleted(response: com.vantiv.triposmobilesdk.responses.ManuallyForwardResponse?) {
+                    val map = mapOf(
+                        "isApproved" to (response?.transactionStatus?.name?.lowercase() == "approved"),
+                        "transactionId" to tpId,  // Use the request tpId
+                        "referenceNumber" to null,
+                        "wasProcessedOnline" to true,  // Assume online if completed successfully
+                        "transactionStatus" to response?.transactionStatus?.name?.lowercase()
+                    )
+                    mainHandler.post { result.success(map) }
+                }
+
+                override fun onManuallyForwardRequestError(exception: Exception?) {
+                    val map = mapOf(
+                        "isApproved" to false,
+                        "errorMessage" to (exception?.message ?: "Forward failed")
+                    )
+                    mainHandler.post { result.success(map) }
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "forwardTransaction error: ${e.message}")
+            result.success(mapOf("isApproved" to false, "errorMessage" to e.message))
+        }
+    }
+
+    private fun deleteStoredTransaction(call: MethodCall, result: Result) {
+        val tpId = call.argument<String>("tpId")
+        if (tpId == null) {
+            result.success(false)
+            return
+        }
+
+        try {
+            vtp.deleteStoredTransactionWithStateStored(tpId)
+            result.success(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "deleteStoredTransaction error: ${e.message}")
+            result.success(false)
+        }
+    }
+
+    private fun mapStoredTransactionRecord(record: com.vantiv.triposmobilesdk.storeandforward.StoredTransactionRecord): Map<String, Any?> {
+        // Use reflection to safely get properties that may not exist in all SDK versions
+        fun getProperty(name: String): Any? = try {
+            record.javaClass.getMethod("get${name.replaceFirstChar { it.uppercase() }}").invoke(record)
+        } catch (e: Exception) { null }
+        
+        // 基本信息
+        val createdOn = getProperty("createdOn")?.toString()
+        
+        // 卡片信息
+        val accountNumber = getProperty("accountNumber")?.toString()
+        val cardHolderName = getProperty("cardHolderName")?.toString()
+        val cardLogo = getProperty("cardLogo")?.toString()
+        val expirationDate = getProperty("expirationDate")?.toString()
+        val binValue = getProperty("binValue")?.toString()  // BIN (Bank Identification Number)
+        val applicationLabel = getProperty("applicationLabel")?.toString()  // EMV 应用标签
+        
+        // 输入方式和设备信息
+        val entryMode = getProperty("entryMode")?.toString()
+        val deviceSerialNumber = getProperty("deviceSerialNumber")?.toString()
+        
+        // 操作员/终端信息
+        val clerkId = getProperty("clerkId")?.toString()
+        val terminalId = getProperty("terminalId")?.toString()
+        val laneId = getProperty("laneId")?.toString()
+        
+        // 交易追踪信息
+        val invoiceNumber = getProperty("invoiceNumber")?.toString()
+        val referenceNumber = getProperty("referenceNumber")?.toString()
+        val approvalCode = getProperty("approvalCode")?.toString()
+        val transactionId = getProperty("transactionId")?.toString()
+        
+        // Get last 4 digits from account number
+        val lastFourDigits = accountNumber?.takeLast(4)
+        
+        return mapOf(
+            // 基本信息
+            "tpId" to record.tpId,
+            "state" to record.state?.name?.lowercase(),
+            "totalAmount" to record.totalAmount?.toDouble(),
+            "createdOn" to createdOn,
+            "transactionType" to record.transactionType?.name,
+            
+            // 卡片信息
+            "lastFourDigits" to lastFourDigits,
+            "accountNumber" to accountNumber,
+            "cardHolderName" to cardHolderName,
+            "cardLogo" to cardLogo,
+            "expirationDate" to expirationDate,
+            "binValue" to binValue,
+            "applicationLabel" to applicationLabel,
+            
+            // 设备信息
+            "entryMode" to entryMode,
+            "deviceSerialNumber" to deviceSerialNumber,
+            
+            // 操作员/终端信息
+            "clerkId" to clerkId,
+            "terminalId" to terminalId,
+            "laneId" to laneId,
+            
+            // 交易追踪
+            "invoiceNumber" to invoiceNumber,
+            "referenceNumber" to referenceNumber,
+            "approvalCode" to approvalCode,
+            "transactionId" to transactionId
+        )
+    }
+
+    private fun mapStringToStoredTransactionState(stateName: String): com.vantiv.triposmobilesdk.storeandforward.StoredTransactionState {
+        return when (stateName.lowercase()) {
+            "stored" -> com.vantiv.triposmobilesdk.storeandforward.StoredTransactionState.Stored
+            "storedpendinggenac2" -> com.vantiv.triposmobilesdk.storeandforward.StoredTransactionState.StoredPendingGenac2
+            "processing" -> com.vantiv.triposmobilesdk.storeandforward.StoredTransactionState.Processing
+            "processed" -> com.vantiv.triposmobilesdk.storeandforward.StoredTransactionState.Processed
+            "deleted" -> com.vantiv.triposmobilesdk.storeandforward.StoredTransactionState.Deleted
+            else -> com.vantiv.triposmobilesdk.storeandforward.StoredTransactionState.Stored
+        }
     }
 }

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:tripos_mobile/tripos_mobile.dart';
 
+import 'stored_transactions_page.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -59,6 +61,7 @@ class _TriposHomePageState extends State<TriposHomePage> {
   bool _isInitialized = false;
   bool _isLoading = false;
   bool _isConnecting = false; // 标记是否正在连接设备
+  bool _transactionJustCompleted = false; // 标记交易刚完成，防止设备事件覆盖状态
   String _status = 'Not initialized';
   String _lastTransactionId = '';
   List<String> _devices = [];
@@ -187,6 +190,12 @@ class _TriposHomePageState extends State<TriposHomePage> {
 
     // Listen to device events (now type-safe with DeviceEvent)
     _deviceEventSubscription = _tripos.deviceEventStream.listen((event) {
+      // 交易刚完成后，忽略设备事件，防止覆盖交易结果状态
+      if (_transactionJustCompleted) {
+        print('Ignoring device event after transaction: ${event.type}');
+        return;
+      }
+
       setState(() {
         switch (event.type) {
           case DeviceEventType.connecting:
@@ -328,6 +337,22 @@ class _TriposHomePageState extends State<TriposHomePage> {
       VtpStatus.surchargeFeeAmountDeclined => '附加费已拒绝',
       VtpStatus.surchargeFeeAmountTimedOut => '附加费确认超时',
       VtpStatus.cashbackUnsupportedCard => '卡片不支持现金返还',
+    };
+  }
+
+  /// 将 TransactionStatus 转换为可读的中文状态文本
+  String _formatTransactionStatus(TransactionStatus status) {
+    return switch (status) {
+      TransactionStatus.approved => '✅ 交易已批准',
+      TransactionStatus.partiallyApproved => '⚠️ 部分批准',
+      TransactionStatus.approvedExceptCashback => '✅ 已批准（现金返还除外）',
+      TransactionStatus.approvedByMerchant => '📦 离线交易待转发',
+      TransactionStatus.callIssuer => '📞 需联系发卡行',
+      TransactionStatus.declined => '❌ 交易被拒绝',
+      TransactionStatus.needsToBeReversed => '🔄 需要撤销',
+      TransactionStatus.dccRequested => '💱 DCC 请求',
+      TransactionStatus.error => '❌ 交易错误',
+      TransactionStatus.unknown => '❓ 未知状态',
     };
   }
 
@@ -600,6 +625,25 @@ class _TriposHomePageState extends State<TriposHomePage> {
         }
       });
 
+      // 设置标志防止设备事件立即覆盖状态
+      _transactionJustCompleted = true;
+
+      // 短暂显示交易结果状态，然后恢复到设备状态
+      setState(() {
+        _status = _formatTransactionStatus(response.transactionStatus);
+      });
+
+      // 2秒后恢复到设备状态
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() {
+            _transactionJustCompleted = false;
+            // 恢复到设备就绪状态（因为交易完成说明设备是正常的）
+            _status = '设备就绪';
+          });
+        }
+      });
+
       if (response.isApproved) {
         _showSnackBar('Sale approved!');
       } else {
@@ -610,8 +654,10 @@ class _TriposHomePageState extends State<TriposHomePage> {
       }
     } catch (e) {
       _showSnackBar('Sale error: $e', isError: true);
+      _transactionJustCompleted = false;
       setState(() {
         _transactionResult = 'Error: $e';
+        _status = '交易错误';
       });
     } finally {
       setState(() {
@@ -856,12 +902,26 @@ class _TriposHomePageState extends State<TriposHomePage> {
       appBar: AppBar(
         title: const Text('triPOS Mobile Example'),
         actions: [
-          if (_isInitialized)
+          if (_isInitialized) ...[
+            IconButton(
+              icon: const Icon(Icons.storage),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        StoredTransactionsPage(tripos: _tripos),
+                  ),
+                );
+              },
+              tooltip: '离线交易',
+            ),
             IconButton(
               icon: const Icon(Icons.power_settings_new),
               onPressed: _isLoading ? null : _deinitialize,
               tooltip: 'Deinitialize',
             ),
+          ],
         ],
       ),
       body: SingleChildScrollView(
