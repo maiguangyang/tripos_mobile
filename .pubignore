@@ -1,0 +1,20 @@
+# Sample apps - not needed for package distribution
+sampleapp/
+SwiftSampleApp/
+
+# SDK documentation PDFs
+Worldpay triPOS Mobile Android SDK Integration Guide.pdf
+Worldpay triPOS Mobile iOS SDK Integration Guide.pdf
+
+# Build outputs
+build/
+.dart_tool/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
