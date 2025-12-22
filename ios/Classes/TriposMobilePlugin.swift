@@ -94,6 +94,19 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin {
         case "deleteStoredTransaction":
             deleteStoredTransaction(call: call, result: result)
             
+        // SDK/Device separation methods (NEW)
+        case "initializeSdk":
+            initializeSdk(call: call, result: result)
+            
+        case "connectDevice":
+            connectDevice(call: call, result: result)
+            
+        case "disconnectDevice":
+            disconnectDevice(result: result)
+            
+        case "isDeviceConnected":
+            result(isDeviceReady)
+            
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -212,6 +225,122 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin {
             result(nil)
         } catch {
             result(FlutterError(code: "DEINIT_ERROR", message: error.localizedDescription, details: nil))
+        }
+    }
+    
+    // MARK: - SDK/Device Separation Methods (NEW)
+    
+    /// Initialize SDK only (without connecting to a device).
+    /// This sets up the configuration but doesn't establish device connection.
+    private func initializeSdk(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        do {
+            let config = buildConfiguration(from: call.arguments as? [String: Any])
+            vtpConfiguration = config
+            
+            vtp = triPOSMobileSDK.sharedVtp() as? VTP
+            
+            // If already initialized, deinitialize first
+            if vtp?.isInitialized == true {
+                try? vtp?.deinitialize()
+                isDeviceReady = false
+                Thread.sleep(forTimeInterval: 0.3)
+            }
+            
+            vtp?.add(self)
+            vtp?.setDeviceInteractionDelegate(self)
+            
+            // SDK is "initialized" with configuration, but device not connected
+            result([
+                "success": true,
+                "message": "SDK initialized successfully (device not connected)"
+            ])
+            
+        } catch {
+            result(FlutterError(code: "INIT_ERROR", message: error.localizedDescription, details: nil))
+        }
+    }
+    
+    /// Connect to a specific device after SDK has been initialized with config.
+    /// Uses the stored configuration and device identifier to establish connection.
+    private func connectDevice(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let config = vtpConfiguration else {
+            result(FlutterError(
+                code: "NOT_INITIALIZED",
+                message: "SDK must be initialized first. Call initializeSdk() before connectDevice().",
+                details: nil
+            ))
+            return
+        }
+        
+        guard let args = call.arguments as? [String: Any],
+              let identifier = args["identifier"] as? String else {
+            result(FlutterError(code: "INVALID_ARGS", message: "Device identifier is required", details: nil))
+            return
+        }
+        
+        // Update configuration with the device identifier
+        config.deviceConfiguration?.identifier = identifier
+        
+        // Parse device type if provided
+        if let deviceTypeStr = args["deviceType"] as? String {
+            config.deviceConfiguration?.deviceType = mapDeviceType(deviceTypeStr)
+        }
+        
+        // Ensure VTP instance exists
+        if vtp == nil {
+            vtp = triPOSMobileSDK.sharedVtp() as? VTP
+            vtp?.add(self)
+            vtp?.setDeviceInteractionDelegate(self)
+        }
+        
+        isDeviceReady = false
+        pendingConnectResult = result
+        
+        do {
+            try vtp?.initialize(with: config)
+        } catch {
+            pendingConnectResult = nil
+            result(FlutterError(code: "CONNECTION_ERROR", message: error.localizedDescription, details: nil))
+        }
+    }
+    
+    private var pendingConnectResult: FlutterResult?
+    
+    /// Disconnect from current device without fully deinitializing SDK.
+    /// SDK configuration remains, allowing reconnection to same or different device.
+    private func disconnectDevice(result: @escaping FlutterResult) {
+        guard vtp != nil else {
+            result([
+                "success": true,
+                "message": "No SDK instance to disconnect"
+            ])
+            return
+        }
+        
+        if !isDeviceReady {
+            result([
+                "success": true,
+                "message": "No device connected"
+            ])
+            return
+        }
+        
+        do {
+            // Deinitialize but keep the configuration
+            try vtp?.deinitialize()
+            isDeviceReady = false
+            
+            // Send device event
+            DispatchQueue.main.async { [weak self] in
+                self?.deviceEventSink?(["event": "disconnected"])
+            }
+            
+            result([
+                "success": true,
+                "message": "Device disconnected"
+            ])
+        } catch {
+            result(FlutterError(code: "DISCONNECT_ERROR", message: error.localizedDescription, details: nil))
         }
     }
     
@@ -1032,6 +1161,19 @@ extension TriposMobilePlugin: VTPDelegate {
             }
             pendingInitResult = nil
         }
+        
+        // Complete pending connect if waiting (for connectDevice flow)
+        if let pendingResult = pendingConnectResult {
+            DispatchQueue.main.async {
+                pendingResult([
+                    "success": true,
+                    "description": description ?? "",
+                    "model": model ?? "",
+                    "serialNumber": serialNumber ?? ""
+                ])
+            }
+            pendingConnectResult = nil
+        }
     }
     
     public func deviceDidConnect(_ description: String!, model: String!, serialNumber: String!, 
@@ -1053,6 +1195,21 @@ extension TriposMobilePlugin: VTPDelegate {
                 pendingResult(true)
             }
             pendingInitResult = nil
+        }
+        
+        // Complete pending connect if waiting (for connectDevice flow)
+        if let pendingResult = pendingConnectResult {
+            DispatchQueue.main.async {
+                pendingResult([
+                    "success": true,
+                    "description": description ?? "",
+                    "model": model ?? "",
+                    "serialNumber": serialNumber ?? "",
+                    "firmwareVersion": firmwareVersion ?? "",
+                    "batteryPercentage": batteryPercentage ?? ""
+                ])
+            }
+            pendingConnectResult = nil
         }
     }
     

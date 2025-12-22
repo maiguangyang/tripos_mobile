@@ -250,18 +250,66 @@ if (response.isApproved) {
 
 ### TriposMobile 类
 
+#### 基础方法
+
 | 方法 | 说明 | 返回值 |
 |------|------|--------|
 | `scanBluetoothDevices(config)` | 扫描附近的蓝牙支付设备 | `Future<List<String>>` |
-| `initialize(config)` | 初始化 SDK 并连接设备 | `Future<bool>` |
+| `initialize(config)` | 初始化 SDK 并连接设备（一步完成） | `Future<bool>` |
 | `deinitialize()` | 断开设备并释放资源 | `Future<void>` |
 | `isInitialized()` | 检查 SDK 是否已初始化 | `Future<bool>` |
+
+#### SDK/Device 分离方法 (NEW)
+
+更灵活的设备管理，支持单独初始化 SDK 和连接设备：
+
+| 方法 | 说明 | 返回值 |
+|------|------|--------|
+| `initializeSdk(config)` | 仅初始化 SDK（不连接设备） | `Future<Map<String, dynamic>>` |
+| `connectDevice(identifier, {deviceType})` | 连接到指定设备 | `Future<Map<String, dynamic>>` |
+| `disconnectDevice()` | 断开设备（保持 SDK 配置） | `Future<Map<String, dynamic>>` |
+| `isDeviceConnected()` | 检查设备是否已连接 | `Future<bool>` |
+
+**使用场景：**
+- 需要在 SDK 初始化后再选择设备
+- 需要在不重新初始化 SDK 的情况下切换设备
+- 需要更精细控制设备连接生命周期
+
+```dart
+// 两步初始化流程示例
+final tripos = TriposMobile();
+
+// Step 1: 仅初始化 SDK
+await tripos.initializeSdk(config);
+
+// Step 2: 扫描设备
+final devices = await tripos.scanBluetoothDevices(config);
+
+// Step 3: 连接到选中设备
+await tripos.connectDevice(devices.first);
+
+// 交易处理...
+
+// 切换设备（无需重新初始化 SDK）
+await tripos.disconnectDevice();
+await tripos.connectDevice(anotherDevice);
+```
+
+#### 交易方法
+
+| 方法 | 说明 | 返回值 |
+|------|------|--------|
 | `processSale(request)` | 处理销售交易 | `Future<SaleResponse>` |
 | `processRefund(request)` | 处理退款交易（需刷卡） | `Future<RefundResponse>` |
 | `processLinkedRefund(request)` | 处理关联退款（无需刷卡） | `Future<RefundResponse>` |
 | `processVoid(request)` | 作废交易 | `Future<VoidResponse>` |
 | `cancelTransaction()` | 取消当前进行中的交易 | `Future<void>` |
 | `getDeviceInfo()` | 获取已连接设备信息 | `Future<DeviceInfo?>` |
+
+#### 事件流
+
+| 属性 | 说明 | 类型 |
+|------|------|------|
 | `statusStream` | 交易状态实时更新 | `Stream<VtpStatus>` |
 | `deviceEventStream` | 设备连接事件 | `Stream<DeviceEvent>` |
 

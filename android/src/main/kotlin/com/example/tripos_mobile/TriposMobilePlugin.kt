@@ -70,8 +70,14 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "getPlatformVersion" -> result.success("Android ${android.os.Build.VERSION.RELEASE}")
             "getSdkVersion" -> result.success(triPOSMobileSDK.getVersion())
             "scanBluetoothDevices" -> scanBluetoothDevices(call, result)
+            // SDK and Device management (new separated methods)
+            "initializeSdk" -> initializeSdk(call, result)
+            "connectDevice" -> connectDevice(call, result)
+            "disconnectDevice" -> disconnectDevice(result)
+            // Legacy combined method (backward compatible)
             "initialize" -> initialize(call, result)
             "isInitialized" -> result.success(vtp.isInitialized)
+            "isDeviceConnected" -> result.success(isDeviceReady)
             "deinitialize" -> deinitialize(result)
             "processSale" -> processSale(call, result)
             "processRefund" -> processRefund(call, result)
@@ -336,6 +342,240 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         } catch (e: Exception) {
             result.error("DEINIT_ERROR", e.message, null)
         }
+    }
+
+    // ===== NEW: Separated SDK Initialization and Device Connection =====
+    
+    /**
+     * Initialize SDK only (without connecting to a device).
+     * Uses initializeDevicePool() which sets up the SDK configuration
+     * but doesn't establish a device connection.
+     */
+    private fun initializeSdk(call: MethodCall, result: Result) {
+        val ctx = context ?: run {
+            result.error("NO_CONTEXT", "Context is not available", null)
+            return
+        }
+        
+        try {
+            val configMap = call.arguments as? Map<*, *>
+            val config = buildConfiguration(configMap)
+            currentConfiguration = config
+            
+            // Reset device state
+            isDeviceReady = false
+            
+            Log.i(TAG, "initializeSdk: Configuration stored for later device connection.")
+            
+            // For Bluetooth devices, we just store the configuration.
+            // The actual SDK initialization happens in connectDevice() when a specific
+            // device identifier is provided and vtp.initialize() is called.
+            
+            result.success(mapOf(
+                "success" to true,
+                "message" to "SDK configuration stored. Ready to scan and connect device."
+            ))
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "initializeSdk setup error: ${e.message}", e)
+            result.error("INIT_ERROR", e.message, null)
+        }
+    }
+    
+    /**
+     * Connect to a specific device after SDK has been initialized.
+     * Uses vtp.initialize() with the device identifier to establish connection.
+     * For Bluetooth devices, we need to use the standard initialize flow.
+     */
+    private fun connectDevice(call: MethodCall, result: Result) {
+        val ctx = context ?: run {
+            result.error("NO_CONTEXT", "Context is not available", null)
+            return
+        }
+        
+        try {
+            val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+            val identifier = args["identifier"] as? String
+            val deviceTypeStr = args["deviceType"] as? String
+            
+            if (identifier.isNullOrEmpty()) {
+                result.error("INVALID_ARGS", "Device identifier is required", null)
+                return
+            }
+            
+            val currentConfig = currentConfiguration ?: run {
+                result.error("NO_CONFIG", "Configuration not set. Call initializeSdk first.", null)
+                return
+            }
+            
+            Log.i(TAG, "connectDevice: Connecting to device: $identifier (type: $deviceTypeStr)")
+            
+            // Update the device configuration with the new identifier
+            val deviceType = parseDeviceType(deviceTypeStr)
+            currentConfig.deviceConfiguration.identifier = identifier
+            currentConfig.deviceConfiguration.deviceType = deviceType
+            
+            isDeviceReady = false
+            
+            // Store identifier in final val for closure capture
+            val finalIdentifier = identifier
+            Log.i(TAG, "connectDevice: Using identifier for fallback: $finalIdentifier")
+            
+            // Use initialize with DeviceConnectionListener for Bluetooth devices
+            val connectionLatch = java.util.concurrent.CountDownLatch(1)
+            var connectionError: String? = null
+            var deviceDescription = ""
+            var deviceModel = ""
+            var deviceSerial = ""
+            
+            val connectionListener = object : DeviceConnectionListener {
+                override fun onConnected(device: Device?, description: String?, model: String?, serialNumber: String?) {
+                    Log.i(TAG, "connectDevice: Raw callback - description=$description, model=$model, serial=$serialNumber")
+                    Log.i(TAG, "connectDevice: Device object - ${device?.toString()}")
+                    Log.i(TAG, "connectDevice: finalIdentifier in closure = $finalIdentifier")
+                    
+                    // Try to get info from Device object if callback params are null/empty/NULL strings
+                    val resolvedDescription = when {
+                        description.isNullOrEmpty() || description == "NULL DEVICE" || description == "null" -> 
+                            device?.description ?: finalIdentifier ?: "Unknown Device"
+                        else -> description
+                    }
+                    
+                    val resolvedModel = when {
+                        model.isNullOrEmpty() || model == "NULL" || model == "null" -> 
+                            device?.model ?: _detectDeviceTypeFromIdentifier(finalIdentifier) ?: finalIdentifier ?: "Unknown"
+                        else -> model
+                    }
+                    
+                    val resolvedSerial = when {
+                        serialNumber.isNullOrEmpty() || serialNumber.startsWith("NULL") || serialNumber == "null" -> 
+                            device?.serialNumber ?: finalIdentifier ?: "Unknown"
+                        else -> serialNumber
+                    }
+                    
+                    Log.i(TAG, "connectDevice: Resolved - description=$resolvedDescription, model=$resolvedModel, serial=$resolvedSerial")
+                    
+                    deviceDescription = resolvedDescription
+                    deviceModel = resolvedModel
+                    deviceSerial = resolvedSerial
+                    isDeviceReady = true
+                    connectionLatch.countDown()
+                }
+                
+                override fun onDisconnected(device: Device?) {
+                    Log.w(TAG, "connectDevice: Device disconnected during connection")
+                    connectionError = "Device disconnected"
+                    isDeviceReady = false
+                    connectionLatch.countDown()
+                }
+                
+                override fun onError(exception: Exception?) {
+                    Log.e(TAG, "connectDevice: Connection error: ${exception?.message}")
+                    connectionError = exception?.message ?: "Unknown error"
+                    isDeviceReady = false
+                    connectionLatch.countDown()
+                }
+                
+                override fun onBatteryLow() {
+                    Log.w(TAG, "connectDevice: Device battery low")
+                }
+                
+                override fun onWarning(exception: Exception?) {
+                    Log.w(TAG, "connectDevice: Device warning: ${exception?.message}")
+                }
+                
+                override fun onConfirmPairing(
+                    ledSequence: MutableList<BTPairingLedSequence>?,
+                    deviceName: String?,
+                    confirmPairingListener: DeviceConnectionListener.ConfirmPairingListener?
+                ) {
+                    Log.i(TAG, "connectDevice: Pairing confirmation requested for $deviceName")
+                    // Auto-confirm pairing
+                    confirmPairingListener?.confirmPairing()
+                }
+            }
+            
+            Thread {
+                try {
+                    vtp.initialize(ctx, currentConfig, connectionListener, null)
+                    
+                    val connected = connectionLatch.await(30, java.util.concurrent.TimeUnit.SECONDS)
+                    
+                    mainHandler.post {
+                        if (!connected) {
+                            result.error("CONNECTION_TIMEOUT", "Connection timed out", null)
+                        } else if (connectionError != null) {
+                            result.error("CONNECTION_ERROR", connectionError, null)
+                        } else {
+                            // Send device connected event
+                            deviceEventSink?.success(mapOf(
+                                "event" to "connected",
+                                "description" to deviceDescription,
+                                "model" to deviceModel,
+                                "serialNumber" to deviceSerial
+                            ))
+                            
+                            result.success(mapOf(
+                                "success" to true,
+                                "description" to deviceDescription,
+                                "model" to deviceModel,
+                                "serialNumber" to deviceSerial
+                            ))
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "connectDevice exception: ${e.message}", e)
+                    mainHandler.post {
+                        result.error("CONNECTION_ERROR", e.message, null)
+                    }
+                }
+            }.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "connectDevice setup error: ${e.message}", e)
+            result.error("CONNECTION_ERROR", e.message, null)
+        }
+    }
+    
+    /**
+     * Disconnect from the current device.
+     * For Bluetooth devices, we use deinitialize() since closeSession() is for USB device pools.
+     * After disconnecting, the stored configuration remains so user can connect to another device.
+     */
+    private fun disconnectDevice(result: Result) {
+        if (!vtp.isInitialized) {
+            // SDK not initialized, but that's okay - just reset state
+            isDeviceReady = false
+            result.success(mapOf("success" to true, "message" to "No device connected"))
+            return
+        }
+        
+        Log.i(TAG, "disconnectDevice: Deinitializing to disconnect device...")
+        
+        Thread {
+            try {
+                // For Bluetooth devices, use deinitialize() to disconnect
+                // The closeSession() API is for USB device pool mode
+                vtp.deinitialize()
+                
+                isDeviceReady = false
+                Log.i(TAG, "disconnectDevice: Device disconnected successfully")
+                
+                mainHandler.post {
+                    deviceEventSink?.success(mapOf("event" to "disconnected"))
+                    result.success(mapOf(
+                        "success" to true, 
+                        "message" to "Device disconnected (configuration retained)"
+                    ))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "disconnectDevice exception: ${e.message}", e)
+                // Even if deinitialize fails, reset state
+                isDeviceReady = false
+                mainHandler.post {
+                    result.error("DISCONNECT_ERROR", e.message, null)
+                }
+            }
+        }.start()
     }
 
     private fun processSale(call: MethodCall, result: Result) {
@@ -848,6 +1088,26 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         
         Log.d(TAG, "Resolved DeviceType: ${result.name}")
         return result
+    }
+    
+    /**
+     * Helper function to detect device type/model from Bluetooth identifier.
+     * Useful as fallback when SDK returns NULL for device info.
+     */
+    private fun _detectDeviceTypeFromIdentifier(identifier: String?): String? {
+        if (identifier.isNullOrEmpty()) return null
+        
+        val upperIdentifier = identifier.uppercase()
+        return when {
+            upperIdentifier.contains("MOB55") || upperIdentifier.contains("MOBY55") -> "Moby 5500"
+            upperIdentifier.contains("MOB85") || upperIdentifier.contains("MOBY85") -> "Moby 8500"
+            upperIdentifier.contains("LANE3") -> "Lane 3000"
+            upperIdentifier.contains("LANE5") -> "Lane 5000"
+            upperIdentifier.contains("LANE7") -> "Lane 7000"
+            upperIdentifier.contains("LANE8") -> "Lane 8000"
+            upperIdentifier.contains("CHIPPER") -> "BBPos Chipper"
+            else -> identifier  // Use identifier as model name
+        }
     }
 
     // Request builders

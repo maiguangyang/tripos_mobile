@@ -68,6 +68,11 @@ class _TriposHomePageState extends State<TriposHomePage> {
   String? _selectedDevice;
   String _transactionResult = '';
 
+  // Separated API mode (NEW)
+  bool _useSeparatedApi = false; // Toggle between combined and separated API
+  bool _isSdkOnlyInitialized =
+      false; // SDK initialized but device not connected
+
   StreamSubscription<VtpStatus>? _statusSubscription;
   StreamSubscription<DeviceEvent>? _deviceEventSubscription;
 
@@ -196,27 +201,29 @@ class _TriposHomePageState extends State<TriposHomePage> {
         return;
       }
 
-      setState(() {
-        switch (event.type) {
-          case DeviceEventType.connecting:
-            _status = '正在连接设备...';
-            _showSnackBar('Connecting to device...');
-          case DeviceEventType.connected:
-            _status = '设备已连接: ${event.model ?? "未知设备"}';
-            _showSnackBar('Device connected: ${event.model}');
-          case DeviceEventType.disconnected:
-            _status = '设备已断开';
-            _showSnackBar('Device disconnected');
-          case DeviceEventType.error:
-            _status = '设备错误';
-            _showSnackBar('Device error: ${event.message}', isError: true);
-          case DeviceEventType.ready:
-            _status = '设备就绪';
-            _showSnackBar('Device ready');
-          case DeviceEventType.unknown:
-            break;
-        }
-      });
+      print("deviceEventStream-marlon $event");
+
+      // setState(() {
+      //   switch (event.type) {
+      //     case DeviceEventType.connecting:
+      //       _status = '正在连接设备...';
+      //       _showSnackBar('Connecting to device...');
+      //     case DeviceEventType.connected:
+      //       _status = '设备已连接: ${event.model ?? "未知设备"}';
+      //       _showSnackBar('Device connected: ${event.model}');
+      //     case DeviceEventType.disconnected:
+      //       _status = '设备已断开';
+      //       _showSnackBar('Device disconnected');
+      //     case DeviceEventType.error:
+      //       _status = '设备错误';
+      //       _showSnackBar('Device error: ${event.message}', isError: true);
+      //     case DeviceEventType.ready:
+      //       _status = '设备就绪';
+      //       _showSnackBar('Device ready');
+      //     case DeviceEventType.unknown:
+      //       break;
+      //   }
+      // });
     });
   }
 
@@ -518,7 +525,7 @@ class _TriposHomePageState extends State<TriposHomePage> {
     setState(() {
       _isLoading = true;
       _isConnecting = true; // 标记开始连接
-      _status = '正在连接设备...';
+      // _status = '正在连接设备...';
     });
 
     try {
@@ -577,6 +584,127 @@ class _TriposHomePageState extends State<TriposHomePage> {
       });
     }
   }
+
+  // ============= Separated API Methods (NEW) =============
+
+  /// Initialize SDK only (without connecting to device)
+  /// This is the first step in the separated API flow
+  Future<void> _initSdkOnly() async {
+    setState(() {
+      _isLoading = true;
+      _status = '正在初始化 SDK...';
+    });
+
+    try {
+      final result = await _tripos.initializeSdk(_configuration);
+      final success = result['success'] == true;
+
+      setState(() {
+        _isSdkOnlyInitialized = success;
+        _status = success ? 'SDK 已初始化 (设备未连接)' : 'SDK 初始化失败';
+      });
+
+      if (success) {
+        _showSnackBar('SDK initialized (device not connected)');
+      } else {
+        _showSnackBar(
+          'Failed to initialize SDK: ${result['message']}',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      print("_initSdkOnly-marlon ${e.toString()}");
+      _showSnackBar('SDK init error: $e', isError: true);
+      setState(() {
+        _status = 'SDK 初始化失败: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// Connect to device only (after SDK is initialized)
+  /// This is the second step in the separated API flow
+  Future<void> _connectDeviceOnly(String device) async {
+    if (!_isSdkOnlyInitialized) {
+      _showSnackBar('Please initialize SDK first');
+      return;
+    }
+
+    setState(() {
+      _selectedDevice = device;
+      _isLoading = true;
+      _isConnecting = true;
+      // _status = '正在连接设备...';
+    });
+
+    try {
+      final deviceType = _detectDeviceType(device);
+      final result = await _tripos.connectDevice(
+        device,
+        deviceType: deviceType,
+      );
+      final success = result['success'] == true;
+
+      setState(() {
+        _isInitialized = success;
+        _isConnecting = false;
+        _status = success ? '设备已连接: ${result['model'] ?? device}' : '设备连接失败';
+      });
+
+      print("_connectDeviceOnly-marlon $result");
+
+      if (success) {
+        _showSnackBar('Device connected: ${result['model']}');
+      } else {
+        _showSnackBar('Connection failed: ${result['message']}', isError: true);
+      }
+    } catch (e) {
+      print("object-marlon ${e.toString()}");
+      _showSnackBar('Connection error: $e', isError: true);
+      setState(() {
+        _isConnecting = false;
+        _status = '连接失败: $e';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// Disconnect device only (keep SDK initialized)
+  Future<void> _disconnectDeviceOnly() async {
+    setState(() {
+      _isLoading = true;
+      _status = '正在断开设备...';
+    });
+
+    try {
+      final result = await _tripos.disconnectDevice();
+      final success = result['success'] == true;
+
+      setState(() {
+        _isInitialized = false;
+        _status = success ? 'SDK 已初始化 (设备未连接)' : '断开失败';
+      });
+
+      if (success) {
+        _showSnackBar('Device disconnected (SDK still initialized)');
+      }
+    } catch (e) {
+      print("_disconnectDeviceOnly-marlon ${e.toString()}");
+      _showSnackBar('Disconnect error: $e', isError: true);
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  // ============= End Separated API Methods =============
 
   Future<void> _processSale() async {
     if (!_isInitialized) {
@@ -1035,6 +1163,136 @@ class _TriposHomePageState extends State<TriposHomePage> {
                     ),
                     const SizedBox(height: 16),
 
+                    // API Mode Switch (NEW)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _useSeparatedApi
+                            ? Colors.purple.withAlpha(25)
+                            : Colors.blue.withAlpha(25),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _useSeparatedApi
+                              ? Colors.purple.withAlpha(75)
+                              : Colors.blue.withAlpha(75),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _useSeparatedApi ? Icons.call_split : Icons.merge,
+                            color: _useSeparatedApi
+                                ? Colors.purple
+                                : Colors.blue,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _useSeparatedApi ? '分离 API 模式' : '组合 API 模式',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: _useSeparatedApi
+                                        ? Colors.purple
+                                        : Colors.blue,
+                                  ),
+                                ),
+                                Text(
+                                  _useSeparatedApi
+                                      ? 'initializeSdk → connectDevice'
+                                      : 'initialize (一步完成)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: _useSeparatedApi,
+                            onChanged:
+                                _isLoading ||
+                                    _isInitialized ||
+                                    _isSdkOnlyInitialized
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _useSeparatedApi = value;
+                                    });
+                                  },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Separated API: Initialize SDK button (NEW)
+                    if (_useSeparatedApi) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed:
+                                  _isLoading ||
+                                      _isSdkOnlyInitialized ||
+                                      _isInitialized
+                                  ? null
+                                  : _initSdkOnly,
+                              icon: _isLoading && !_isSdkOnlyInitialized
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Icon(
+                                      _isSdkOnlyInitialized
+                                          ? Icons.check_circle
+                                          : Icons.play_arrow,
+                                    ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.purple,
+                                foregroundColor: Colors.white,
+                              ),
+                              label: Text(
+                                _isSdkOnlyInitialized
+                                    ? 'SDK 已初始化'
+                                    : 'Step 1: 初始化 SDK',
+                              ),
+                            ),
+                          ),
+                          // Reset button (when SDK initialized but device not connected)
+                          if (_isSdkOnlyInitialized && !_isInitialized) ...[
+                            const SizedBox(width: 8),
+                            OutlinedButton.icon(
+                              onPressed: _isLoading
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _isSdkOnlyInitialized = false;
+                                        _status = 'SDK 已重置';
+                                      });
+                                      _showSnackBar(
+                                        'SDK reset - can switch mode now',
+                                      );
+                                    },
+                              icon: const Icon(Icons.refresh),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.orange,
+                                side: const BorderSide(color: Colors.orange),
+                              ),
+                              label: const Text('重置'),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+
                     // Scan button
                     ElevatedButton.icon(
                       onPressed: _isLoading ? null : _scanDevices,
@@ -1045,7 +1303,9 @@ class _TriposHomePageState extends State<TriposHomePage> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.bluetooth_searching),
-                      label: const Text('Scan for Devices'),
+                      label: Text(
+                        _useSeparatedApi ? 'Step 2: 扫描设备' : 'Scan for Devices',
+                      ),
                     ),
 
                     // Device List
@@ -1109,7 +1369,9 @@ class _TriposHomePageState extends State<TriposHomePage> {
                                   ? OutlinedButton(
                                       onPressed: _isLoading
                                           ? null
-                                          : _deinitialize,
+                                          : (_useSeparatedApi
+                                                ? _disconnectDeviceOnly
+                                                : _deinitialize),
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: Colors.red,
                                         side: const BorderSide(
@@ -1119,9 +1381,21 @@ class _TriposHomePageState extends State<TriposHomePage> {
                                       child: const Text('Disconnect'),
                                     )
                                   : ElevatedButton(
-                                      onPressed: _isLoading || _isInitialized
+                                      onPressed:
+                                          _isLoading ||
+                                              _isInitialized ||
+                                              (_useSeparatedApi &&
+                                                  !_isSdkOnlyInitialized)
                                           ? null
-                                          : () => _connectToDevice(device),
+                                          : () => _useSeparatedApi
+                                                ? _connectDeviceOnly(device)
+                                                : _connectToDevice(device),
+                                      style: _useSeparatedApi
+                                          ? ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.purple,
+                                              foregroundColor: Colors.white,
+                                            )
+                                          : null,
                                       child: isConnecting
                                           ? const SizedBox(
                                               width: 16,
@@ -1131,7 +1405,11 @@ class _TriposHomePageState extends State<TriposHomePage> {
                                                 color: Colors.white,
                                               ),
                                             )
-                                          : const Text('Connect'),
+                                          : Text(
+                                              _useSeparatedApi
+                                                  ? 'Step 3: 连接'
+                                                  : 'Connect',
+                                            ),
                                     ),
                             );
                           },

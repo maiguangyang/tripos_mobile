@@ -48,6 +48,35 @@ abstract class TriposMobilePlatform extends PlatformInterface {
     throw UnimplementedError('initialize() has not been implemented.');
   }
 
+  // ===== NEW: Separated SDK Initialization and Device Connection =====
+
+  /// Initialize SDK only (without connecting to a device).
+  /// Call this before scanBluetoothDevices() and connectDevice().
+  Future<Map<String, dynamic>> initializeSdk(TriposConfiguration config) {
+    throw UnimplementedError('initializeSdk() has not been implemented.');
+  }
+
+  /// Connect to a specific device after SDK has been initialized.
+  /// [identifier] is the Bluetooth address of the device.
+  /// [deviceType] is optional, defaults to detecting from configuration.
+  Future<Map<String, dynamic>> connectDevice(
+    String identifier, {
+    DeviceType? deviceType,
+  }) {
+    throw UnimplementedError('connectDevice() has not been implemented.');
+  }
+
+  /// Disconnect from current device without deinitializing SDK.
+  /// SDK remains ready and can connect to another device.
+  Future<Map<String, dynamic>> disconnectDevice() {
+    throw UnimplementedError('disconnectDevice() has not been implemented.');
+  }
+
+  /// Check if a device is currently connected
+  Future<bool> isDeviceConnected() {
+    throw UnimplementedError('isDeviceConnected() has not been implemented.');
+  }
+
   /// Deinitialize the SDK
   Future<void> deinitialize() {
     throw UnimplementedError('deinitialize() has not been implemented.');

@@ -88,6 +88,64 @@ class TriposMobile {
     return TriposMobilePlatform.instance.deinitialize();
   }
 
+  // ===== NEW: Separated SDK Initialization and Device Connection =====
+
+  /// Initialize SDK only (without connecting to a device)
+  ///
+  /// This is the first step in the two-step initialization process.
+  /// After calling this, use [scanBluetoothDevices] to find devices,
+  /// then [connectDevice] to connect to a specific device.
+  ///
+  /// Example:
+  /// ```dart
+  /// // Step 1: Initialize SDK
+  /// await tripos.initializeSdk(config);
+  ///
+  /// // Step 2: Scan for devices
+  /// final devices = await tripos.scanBluetoothDevices(config);
+  ///
+  /// // Step 3: Connect to a device
+  /// await tripos.connectDevice(devices.first);
+  /// ```
+  Future<Map<String, dynamic>> initializeSdk(
+    TriposConfiguration configuration,
+  ) {
+    return TriposMobilePlatform.instance.initializeSdk(configuration);
+  }
+
+  /// Connect to a specific device after SDK has been initialized
+  ///
+  /// [identifier] is the Bluetooth address of the device (e.g., "MOB55-12345")
+  /// [deviceType] is optional, defaults to IngenicoRuaBluetooth for Moby devices
+  ///
+  /// Returns a map with connection status and device info.
+  Future<Map<String, dynamic>> connectDevice(
+    String identifier, {
+    DeviceType? deviceType,
+  }) {
+    return TriposMobilePlatform.instance.connectDevice(
+      identifier,
+      deviceType: deviceType,
+    );
+  }
+
+  /// Disconnect from current device without deinitializing SDK
+  ///
+  /// SDK remains initialized and can connect to another device
+  /// using [connectDevice].
+  ///
+  /// Use this when switching between devices without full reinitialization.
+  Future<Map<String, dynamic>> disconnectDevice() {
+    return TriposMobilePlatform.instance.disconnectDevice();
+  }
+
+  /// Check if a device is currently connected
+  ///
+  /// Returns true if connected and ready for transactions.
+  Future<bool> isDeviceConnected() {
+    return TriposMobilePlatform.instance.isDeviceConnected();
+  }
+
   /// Process a sale transaction
   ///
   /// Initiates a card payment for the specified amount.

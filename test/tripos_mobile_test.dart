@@ -103,6 +103,29 @@ class MockTriposMobilePlatform
 
   @override
   Future<bool> deleteStoredTransaction(String tpId) => Future.value(true);
+
+  // SDK/Device separation mock implementations
+  @override
+  Future<Map<String, dynamic>> initializeSdk(TriposConfiguration config) =>
+      Future.value({'success': true, 'message': 'Mock SDK initialized'});
+
+  @override
+  Future<Map<String, dynamic>> connectDevice(
+    String identifier, {
+    DeviceType? deviceType,
+  }) => Future.value({
+    'success': true,
+    'description': 'Mock Device',
+    'model': 'Mock Model',
+    'serialNumber': 'MOCK123',
+  });
+
+  @override
+  Future<Map<String, dynamic>> disconnectDevice() =>
+      Future.value({'success': true, 'message': 'Device disconnected'});
+
+  @override
+  Future<bool> isDeviceConnected() => Future.value(true);
 }
 
 void main() {
@@ -150,5 +173,72 @@ void main() {
 
     final result = await fakePlatform.initialize(config);
     expect(result, true);
+  });
+
+  // ============= Separated API Tests (NEW) =============
+
+  group('SDK/Device Separation API', () {
+    late MockTriposMobilePlatform fakePlatform;
+    late TriposConfiguration testConfig;
+
+    setUp(() {
+      fakePlatform = MockTriposMobilePlatform();
+      TriposMobilePlatform.instance = fakePlatform;
+      testConfig = TriposConfiguration(
+        hostConfiguration: HostConfiguration(
+          acceptorId: 'test',
+          accountId: 'test',
+          accountToken: 'test',
+        ),
+      );
+    });
+
+    test('initializeSdk returns success', () async {
+      final result = await fakePlatform.initializeSdk(testConfig);
+      expect(result['success'], true);
+      expect(result['message'], contains('initialized'));
+    });
+
+    test('connectDevice returns success with device info', () async {
+      final result = await fakePlatform.connectDevice(
+        'MOB55-12345',
+        deviceType: DeviceType.ingenicoMoby5500,
+      );
+      expect(result['success'], true);
+      expect(result['model'], isNotNull);
+      expect(result['serialNumber'], isNotNull);
+    });
+
+    test('disconnectDevice returns success', () async {
+      final result = await fakePlatform.disconnectDevice();
+      expect(result['success'], true);
+    });
+
+    test('isDeviceConnected returns boolean', () async {
+      final result = await fakePlatform.isDeviceConnected();
+      expect(result, isA<bool>());
+    });
+
+    test('Full separated API flow', () async {
+      // Step 1: Initialize SDK (without device)
+      final initResult = await fakePlatform.initializeSdk(testConfig);
+      expect(initResult['success'], true);
+
+      // Step 2: Scan for devices (mock returns devices)
+      final devices = await fakePlatform.scanBluetoothDevices(testConfig);
+      expect(devices, isNotEmpty);
+
+      // Step 3: Connect to device
+      final connectResult = await fakePlatform.connectDevice(devices.first);
+      expect(connectResult['success'], true);
+
+      // Step 4: Check connection status
+      final isConnected = await fakePlatform.isDeviceConnected();
+      expect(isConnected, true);
+
+      // Step 5: Disconnect device
+      final disconnectResult = await fakePlatform.disconnectDevice();
+      expect(disconnectResult['success'], true);
+    });
   });
 }

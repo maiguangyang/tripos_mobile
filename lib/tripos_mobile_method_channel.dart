@@ -72,6 +72,45 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
     await methodChannel.invokeMethod<void>('deinitialize');
   }
 
+  // ===== NEW: Separated SDK Initialization and Device Connection =====
+
+  @override
+  Future<Map<String, dynamic>> initializeSdk(
+    TriposConfiguration configuration,
+  ) async {
+    final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'initializeSdk',
+      configuration.toMap(),
+    );
+    return Map<String, dynamic>.from(result ?? {'success': false});
+  }
+
+  @override
+  Future<Map<String, dynamic>> connectDevice(
+    String identifier, {
+    DeviceType? deviceType,
+  }) async {
+    final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'connectDevice',
+      {'identifier': identifier, 'deviceType': deviceType?.name},
+    );
+    return Map<String, dynamic>.from(result ?? {'success': false});
+  }
+
+  @override
+  Future<Map<String, dynamic>> disconnectDevice() async {
+    final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'disconnectDevice',
+    );
+    return Map<String, dynamic>.from(result ?? {'success': false});
+  }
+
+  @override
+  Future<bool> isDeviceConnected() async {
+    final result = await methodChannel.invokeMethod<bool>('isDeviceConnected');
+    return result ?? false;
+  }
+
   @override
   Future<SaleResponse> processSale(SaleRequest request) async {
     final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
