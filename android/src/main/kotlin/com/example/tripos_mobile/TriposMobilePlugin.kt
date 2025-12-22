@@ -264,6 +264,12 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             Thread {
                 try {
                     Log.i(TAG, "Starting SDK initialization...")
+                    
+                    // Send connecting event to Flutter
+                    mainHandler.post {
+                        deviceEventSink?.success(mapOf("event" to "connecting"))
+                    }
+                    
                     vtp.initialize(ctx, config, connectionListener, null)
                     Log.i(TAG, "SDK initialize() returned, waiting for onConnected callback...")
                     

@@ -477,6 +477,18 @@ enum DeviceEventType {
   /// 设备已就绪（可以进行交易）
   ready,
 
+  /// 设备电量低
+  batteryLow,
+
+  /// 设备警告
+  warning,
+
+  /// 设备初始化进度（iOS）
+  initProgress,
+
+  /// 请移除卡片
+  removeCard,
+
   /// 未知事件类型
   unknown,
 }
