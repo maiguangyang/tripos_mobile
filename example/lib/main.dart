@@ -220,6 +220,19 @@ class _TriposHomePageState extends State<TriposHomePage> {
       //     case DeviceEventType.ready:
       //       _status = '设备就绪';
       //       _showSnackBar('Device ready');
+      //     case DeviceEventType.batteryLow:
+      //       _status = '设备电量低';
+      //       _showSnackBar('Device battery low', isError: true);
+      //     case DeviceEventType.warning:
+      //       _status = '设备警告: ${event.message ?? ""}';
+      //     // Don't show snackbar for warnings to avoid spamming
+      //     case DeviceEventType.initProgress:
+      //       // iOS device initialization progress - don't change main status
+      //       // Could show progress in a subtle way if needed
+      //       break;
+      //     case DeviceEventType.removeCard:
+      //       _status = '请移除卡片';
+      //       _showSnackBar('Please remove card');
       //     case DeviceEventType.unknown:
       //       break;
       //   }

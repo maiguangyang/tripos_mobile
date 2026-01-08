@@ -11,7 +11,7 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin {
     private var deviceEventChannel: FlutterEventChannel?
     
     private var statusEventSink: FlutterEventSink?
-    private var deviceEventSink: FlutterEventSink?
+    var deviceEventSink: FlutterEventSink?  // Changed from private for DeviceEventStreamHandler access
     
     private var vtp: VTP?
     private var vtpConfiguration: VTPConfiguration?
@@ -199,6 +199,9 @@ public class TriposMobilePlugin: NSObject, FlutterPlugin {
             
             isDeviceReady = false
             pendingInitResult = result
+            
+            // Send connecting event to Flutter
+            sendDeviceEvent(["event": "connecting"])
             
             try vtp?.initialize(with: config)
             
@@ -1132,11 +1135,13 @@ class DeviceEventStreamHandler: NSObject, FlutterStreamHandler {
     }
     
     func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
-        // Store in plugin for device events
+        // Store eventSink in plugin for device events
+        plugin?.deviceEventSink = events
         return nil
     }
     
     func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        plugin?.deviceEventSink = nil
         return nil
     }
 }
