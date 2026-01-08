@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:tripos_mobile/tripos_mobile.dart';
+import 'tokenization_page.dart'; // Import the new page
 
 void main() {
   runApp(const MyApp());
@@ -187,7 +188,6 @@ class _TriposHomePageState extends State<TriposHomePage> {
 
     // Listen to device events (now type-safe with DeviceEvent)
     _deviceEventSubscription = _tripos.deviceEventStream.listen((event) {
-
       setState(() {
         switch (event.type) {
           case DeviceEventType.connecting:
@@ -1231,6 +1231,28 @@ class _TriposHomePageState extends State<TriposHomePage> {
                         label: const Text('LINKED REFUND (by Transaction ID)'),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    // Test Tokenization Page Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const TokenizationPage(),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueGrey,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        icon: const Icon(Icons.security),
+                        label: const Text('TEST TOKENIZATION & BLACKLIST'),
+                      ),
+                    ),
+
                     if (_isLoading) ...[
                       const SizedBox(height: 16),
                       Center(

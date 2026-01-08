@@ -137,6 +137,28 @@ class MethodChannelTriposMobile extends TriposMobilePlatform {
   }
 
   @override
+  Future<CreateTokenResponse> createToken(CreateTokenRequest request) async {
+    final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'createToken',
+      request.toMap(),
+    );
+    return CreateTokenResponse.fromMap(Map<String, dynamic>.from(result ?? {}));
+  }
+
+  @override
+  Future<SaleWithTokenResponse> processSaleWithToken(
+    SaleWithTokenRequest request,
+  ) async {
+    final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'processSaleWithToken',
+      request.toMap(),
+    );
+    return SaleWithTokenResponse.fromMap(
+      Map<String, dynamic>.from(result ?? {}),
+    );
+  }
+
+  @override
   Stream<VtpStatus> get statusStream {
     _statusStream ??= statusEventChannel.receiveBroadcastStream().map(
       (event) => _parseVtpStatus(event.toString()),

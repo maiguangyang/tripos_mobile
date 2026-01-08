@@ -135,6 +135,25 @@ class TriposMobile {
     return TriposMobilePlatform.instance.getDeviceInfo();
   }
 
+  /// Create a token (Omnitoken) without processing a sale
+  ///
+  /// This method is used for "Tokenize Only" flow.
+  /// The user will be prompted to insert/swipe/tap their card.
+  /// The returned token can be used for blacklist checks or future transactions.
+  Future<CreateTokenResponse> createToken(CreateTokenRequest request) {
+    return TriposMobilePlatform.instance.createToken(request);
+  }
+
+  /// Process a sale using a previously created token
+  ///
+  /// Uses the token ID instead of reading the card again.
+  /// Used after [createToken] when the token is validated.
+  Future<SaleWithTokenResponse> processSaleWithToken(
+    SaleWithTokenRequest request,
+  ) {
+    return TriposMobilePlatform.instance.processSaleWithToken(request);
+  }
+
   /// Stream of transaction status updates
   ///
   /// Listen to this stream to receive real-time updates during

@@ -494,3 +494,99 @@ class DeviceInfo {
     'firmwareVersion': firmwareVersion,
   };
 }
+
+/// Create token response
+class CreateTokenResponse {
+  /// Transaction status
+  final String transactionStatus;
+
+  /// Token ID generated
+  final String? tokenId;
+
+  /// BIN
+  final String? bin;
+
+  /// Card Logo
+  final String? cardLogo;
+
+  /// Error message
+  final String? errorMessage;
+
+  const CreateTokenResponse({
+    this.transactionStatus = 'unknown',
+    this.tokenId,
+    this.bin,
+    this.cardLogo,
+    this.errorMessage,
+  });
+
+  factory CreateTokenResponse.fromMap(Map<String, dynamic> map) {
+    return CreateTokenResponse(
+      transactionStatus: map['transactionStatus'] as String? ?? 'unknown',
+      tokenId: map['tokenId'] as String?,
+      bin: map['bin'] as String?,
+      cardLogo: map['cardLogo'] as String?,
+      errorMessage: map['errorMessage'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'transactionStatus': transactionStatus,
+    'tokenId': tokenId,
+    'bin': bin,
+    'cardLogo': cardLogo,
+    'errorMessage': errorMessage,
+  };
+}
+
+/// Sale with Token response (similar to SaleResponse)
+class SaleWithTokenResponse extends TransactionResponse {
+  /// Cashback amount
+  final double? cashbackAmount;
+
+  /// Tip amount
+  final double? tipAmount;
+
+  const SaleWithTokenResponse({
+    super.isApproved,
+    super.transactionStatus,
+    super.approvedAmount,
+    super.host,
+    super.card,
+    super.emv,
+    super.errorMessage,
+    super.signatureData,
+    super.tpId,
+    super.rawResponse,
+    this.cashbackAmount,
+    this.tipAmount,
+  });
+
+  factory SaleWithTokenResponse.fromMap(Map<String, dynamic> map) {
+    final transactionStatus = _parseTransactionStatus(
+      map['transactionStatus'] as String?,
+    );
+    return SaleWithTokenResponse(
+      isApproved: _isStatusApproved(transactionStatus),
+      transactionStatus: transactionStatus,
+      approvedAmount: (map['approvedAmount'] as num?)?.toDouble(),
+      host: HostResponse.fromMap(_toStringDynamicMap(map['host'])),
+      card: CardInfo.fromMap(_toStringDynamicMap(map['card'])),
+      emv: EmvInfo.fromMap(_toStringDynamicMap(map['emv'])),
+      errorMessage: map['errorMessage'] as String?,
+      signatureData: map['signatureData'] as String?,
+      tpId: map['tpId'] as String?,
+      rawResponse: map,
+      cashbackAmount: (map['cashbackAmount'] as num?)?.toDouble(),
+      tipAmount: (map['tipAmount'] as num?)?.toDouble(),
+    );
+  }
+
+  static TransactionStatus _parseTransactionStatus(String? value) {
+    if (value == null) return TransactionStatus.error;
+    return TransactionStatus.values.firstWhere(
+      (e) => e.name.toLowerCase() == value.toLowerCase(),
+      orElse: () => TransactionStatus.error,
+    );
+  }
+}

@@ -96,6 +96,20 @@ abstract class TriposMobilePlatform extends PlatformInterface {
     throw UnimplementedError('getDeviceInfo() has not been implemented.');
   }
 
+  /// Create a token (Omnitoken) without processing a sale
+  Future<CreateTokenResponse> createToken(CreateTokenRequest request) {
+    throw UnimplementedError('createToken() has not been implemented.');
+  }
+
+  /// Process a sale using a previously created token
+  Future<SaleWithTokenResponse> processSaleWithToken(
+    SaleWithTokenRequest request,
+  ) {
+    throw UnimplementedError(
+      'processSaleWithToken() has not been implemented.',
+    );
+  }
+
   /// Stream of transaction status updates
   Stream<VtpStatus> get statusStream {
     throw UnimplementedError('statusStream has not been implemented.');

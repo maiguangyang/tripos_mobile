@@ -17,6 +17,8 @@ import com.vantiv.triposmobilesdk.*
 import com.vantiv.triposmobilesdk.enums.*
 import com.vantiv.triposmobilesdk.requests.*
 import com.vantiv.triposmobilesdk.responses.*
+import com.vantiv.triposmobilesdk.express.TokenProvider
+
 import java.math.BigDecimal
 
 /** TriposMobilePlugin */
@@ -80,6 +82,9 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             "processAuthorization" -> processAuthorization(call, result)
             "cancelTransaction" -> cancelTransaction(result)
             "getDeviceInfo" -> getDeviceInfo(result)
+            "getDeviceInfo" -> getDeviceInfo(result)
+            "createToken" -> createToken(call, result)
+            "processSaleWithToken" -> processSaleWithToken(call, result)
             else -> result.notImplemented()
         }
     }
@@ -704,6 +709,95 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         }
     }
 
+    private fun createToken(call: MethodCall, result: Result) {
+        if (!vtp.isInitialized) {
+            result.error("NOT_INITIALIZED", "SDK is not initialized", null)
+            return
+        }
+        
+        try {
+            val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+            val request = buildCreateTokenRequest(requestMap)
+            
+            setupStatusListener()
+            
+            vtp.processCreateTokenRequest(request, object : CreateTokenRequestListener {
+                override fun onCreateTokenRequestCompleted(response: CreateTokenResponse?) {
+                    mainHandler.post {
+                        result.success(buildCreateTokenResponseMap(response))
+                    }
+                }
+                
+                override fun onCreateTokenRequestError(exception: Exception?) {
+                    mainHandler.post {
+                        result.success(mapOf(
+                            "transactionStatus" to "error",
+                            "errorMessage" to (exception?.message ?: "Unknown error")
+                        ))
+                    }
+                }
+            }, object : DeviceInteractionListener {
+                 override fun onDisplayText(text: String?) {
+                     Log.i(TAG, "SDK Display Text: $text")
+                 }
+                 override fun onRemoveCard() {
+                     Log.i(TAG, "SDK: Please remove card")
+                 }
+                 override fun onCardRemoved() {
+                     Log.i(TAG, "SDK: Card removed")
+                 }
+                 // Implement other methods as no-op or log
+                 override fun onChoiceSelections(choices: Array<String>?, selectionType: SelectionType?, listener: DeviceInteractionListener.SelectChoiceListener?) {}
+                 override fun onAmountConfirmation(amountType: AmountConfirmationType?, amount: java.math.BigDecimal?, listener: DeviceInteractionListener.ConfirmAmountListener?) {
+                     listener?.confirmAmount(true)
+                 }
+                 override fun onNumericInput(inputType: NumericInputType?, listener: DeviceInteractionListener.NumericInputListener?) {}
+                 override fun onSelectApplication(applications: Array<String>?, listener: DeviceInteractionListener.SelectChoiceListener?) {
+                     if (applications != null && applications.isNotEmpty() && listener != null) {
+                         listener.selectChoice(0)
+                     }
+                 }
+            })
+        } catch (e: Exception) {
+            result.error("CREATE_TOKEN_ERROR", e.message, null)
+        }
+    }
+
+    private fun processSaleWithToken(call: MethodCall, result: Result) {
+        if (!vtp.isInitialized) {
+            result.error("NOT_INITIALIZED", "SDK is not initialized", null)
+            return
+        }
+        
+        try {
+            val requestMap = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+            val request = buildSaleWithTokenRequest(requestMap)
+            
+            setupStatusListener()
+            
+            vtp.processSaleWithTokenRequest(request, object : SaleWithTokenRequestListener {
+                override fun onSaleWithTokenRequestCompleted(response: SaleWithTokenResponse?) {
+                    mainHandler.post {
+                        result.success(buildSaleWithTokenResponseMap(response))
+                    }
+                }
+                
+                override fun onSaleWithTokenRequestError(exception: Exception?) {
+                    mainHandler.post {
+                        result.success(mapOf(
+                            "transactionStatus" to "error",
+                            "errorMessage" to (exception?.message ?: "Unknown error")
+                        ))
+                    }
+                }
+            })
+        } catch (e: Exception) {
+            result.error("SALE_WITH_TOKEN_ERROR", e.message, null)
+        }
+    }
+
+
+
     private fun setupStatusListener() {
         vtp.setStatusListener { status: VtpStatus ->
             mainHandler.post {
@@ -1030,6 +1124,76 @@ class TriposMobilePlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     }
 
     private fun buildAuthorizationResponseMap(response: AuthorizationResponse?): Map<String, Any?> {
+        if (response == null) {
+            return mapOf("transactionStatus" to "error", "errorMessage" to "Null response")
+        }
+        
+        return mapOf(
+            "transactionStatus" to response.transactionStatus?.name?.lowercase(),
+            "approvedAmount" to response.approvedAmount?.toDouble(),
+            "tpId" to getPropertySafe(response, "tpId"),
+            "host" to buildHostResponseMap(response.host),
+            "card" to buildCardInfoMap(response),
+            "emv" to buildEmvInfoMap(response)
+        )
+    }
+
+    private fun buildCreateTokenRequest(requestMap: Map<*, *>): CreateTokenRequest {
+        val request = CreateTokenRequest()
+        request.laneNumber = requestMap["laneNumber"] as? String ?: "1"
+        request.referenceNumber = requestMap["referenceNumber"] as? String ?: ""
+        request.clerkNumber = requestMap["clerkNumber"] as? String
+        request.shiftID = requestMap["shiftId"] as? String
+        request.ticketNumber = requestMap["ticketNumber"] as? String
+        request.cardholderPresentCode = CardHolderPresentCode.Present
+        request.tokenType = TokenType.OmniToken
+        return request
+    }
+
+    private fun buildSaleWithTokenRequest(requestMap: Map<*, *>): SaleWithTokenRequest {
+        val request = SaleWithTokenRequest()
+        request.tokenId = requestMap["tokenId"] as? String ?: ""
+        request.tokenProvider = TokenProvider.OmniToken
+        request.transactionAmount = BigDecimal((requestMap["transactionAmount"] as? Number)?.toDouble() ?: 0.0)
+        request.referenceNumber = requestMap["referenceNumber"] as? String ?: ""
+        request.laneNumber = requestMap["laneNumber"] as? String ?: "1"
+        request.clerkNumber = requestMap["clerkNumber"] as? String
+        request.shiftID = requestMap["shiftId"] as? String
+        request.ticketNumber = requestMap["ticketNumber"] as? String
+        request.cardholderPresentCode = CardHolderPresentCode.NotPresent
+        
+        /*
+        (requestMap["tipAmount"] as? Number)?.let {
+            request.tipAmount = BigDecimal(it.toDouble())
+        }
+        (requestMap["convenienceFeeAmount"] as? Number)?.let {
+            request.convenienceFeeAmount = BigDecimal(it.toDouble())
+        }
+        (requestMap["salesTaxAmount"] as? Number)?.let {
+            request.salesTaxAmount = BigDecimal(it.toDouble())
+        }
+        */
+        
+        return request
+    }
+
+    private fun buildCreateTokenResponseMap(response: CreateTokenResponse?): Map<String, Any?> {
+        if (response == null) {
+            return mapOf("transactionStatus" to "error", "errorMessage" to "Null response")
+        }
+        
+        // Get tokenId safely
+        val tokenId = getPropertySafe(response, "tokenId", "TokenId")
+        
+        return mapOf(
+            "transactionStatus" to "approved",
+            "tokenId" to tokenId,
+            "bin" to getPropertySafe(response, "bin"),
+            "cardLogo" to getPropertySafe(response, "cardLogo")
+        )
+    }
+
+    private fun buildSaleWithTokenResponseMap(response: SaleWithTokenResponse?): Map<String, Any?> {
         if (response == null) {
             return mapOf("transactionStatus" to "error", "errorMessage" to "Null response")
         }

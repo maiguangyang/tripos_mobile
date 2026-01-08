@@ -331,3 +331,87 @@ class AuthorizationCompletionRequest {
     'ticketNumber': ticketNumber,
   };
 }
+
+/// Create token request (Tokenize Only)
+class CreateTokenRequest {
+  /// Lane number
+  final String laneNumber;
+
+  /// Reference number
+  final String referenceNumber;
+
+  /// Cardholder present status
+  final CardHolderPresentCode cardholderPresentCode;
+
+  /// Clerk number
+  final String? clerkNumber;
+
+  /// Shift ID
+  final String? shiftId;
+
+  /// Ticket number
+  final String? ticketNumber;
+
+  const CreateTokenRequest({
+    this.laneNumber = '1',
+    this.referenceNumber = '',
+    this.cardholderPresentCode = CardHolderPresentCode.present,
+    this.clerkNumber,
+    this.shiftId,
+    this.ticketNumber,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'laneNumber': laneNumber,
+    'referenceNumber': referenceNumber,
+    'cardholderPresentCode': cardholderPresentCode.name,
+    'clerkNumber': clerkNumber,
+    'shiftId': shiftId,
+    'ticketNumber': ticketNumber,
+  };
+}
+
+/// Sale transaction request using a Token
+class SaleWithTokenRequest extends TransactionRequest {
+  /// The token ID to use for payment
+  final String tokenId;
+
+  /// Convenience fee amount
+  final double? convenienceFeeAmount;
+
+  /// Sales tax amount
+  final double? salesTaxAmount;
+
+  /// Tip amount
+  final double? tipAmount;
+
+  const SaleWithTokenRequest({
+    required this.tokenId,
+    required super.transactionAmount,
+    super.laneNumber,
+    super.referenceNumber,
+    super.cardholderPresentCode =
+        CardHolderPresentCode.notPresent, // Default to not present for token
+    super.clerkNumber,
+    super.shiftId,
+    super.ticketNumber,
+    this.convenienceFeeAmount,
+    this.salesTaxAmount,
+    this.tipAmount,
+  });
+
+  @override
+  Map<String, dynamic> toMap() => {
+    'tokenId': tokenId,
+    'transactionAmount': transactionAmount,
+    'laneNumber': laneNumber,
+    'referenceNumber': referenceNumber,
+    'cardholderPresentCode': cardholderPresentCode.name,
+    'clerkNumber': clerkNumber,
+    'shiftId': shiftId,
+    'ticketNumber': ticketNumber,
+    'convenienceFeeAmount': convenienceFeeAmount,
+    'salesTaxAmount': salesTaxAmount,
+    'tipAmount': tipAmount,
+  };
+}
